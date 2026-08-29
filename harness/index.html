@@ -1,0 +1,87 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- SPDX-FileCopyrightText: 2026 Neil Rackett -->
+<!doctype html>
+<meta charset="utf-8">
+<title>COMpad keyboard harness</title>
+<style>
+  body { font-family: ui-monospace, monospace; background: #16181d; color: #d6d8de;
+         display: grid; place-items: center; min-height: 90vh; }
+  table { border-collapse: collapse; margin-top: 1em; }
+  td { padding: .3em .9em; border: 1px solid #333; }
+  td.on { background: #2f6f3f; color: #fff; }
+  #status { margin-top: 1em; color: #888; }
+</style>
+<h1>COMpad</h1>
+<p>Press and hold keys; the ST sees an xpad.</p>
+<table id="map"></table>
+<div id="status">connecting...</div>
+<script type="module">
+import { XPAD } from './xpadmap.js';
+
+'use strict';
+
+// Keys to xpad bits, per docs/roadmap.md's phase 1 mapping. Positional
+// names, never legends: see the button naming trap.
+const MAP = {
+  ArrowUp:    { bit: XPAD.UP, label: 'Up' },
+  ArrowDown:  { bit: XPAD.DOWN, label: 'Down' },
+  ArrowLeft:  { bit: XPAD.LEFT, label: 'Left' },
+  ArrowRight: { bit: XPAD.RIGHT, label: 'Right' },
+  KeyZ:       { bit: XPAD.SOUTH, label: 'Z = south' },
+  KeyX:       { bit: XPAD.EAST, label: 'X = east' },
+  KeyA:       { bit: XPAD.WEST, label: 'A = west' },
+  KeyS:       { bit: XPAD.NORTH, label: 'S = north' },
+  KeyQ:       { bit: XPAD.TL, label: 'Q = TL' },
+  KeyW:       { bit: XPAD.TR, label: 'W = TR' },
+  Enter:      { bit: XPAD.START, label: 'Enter = start' },
+  ShiftLeft:  { bit: XPAD.SELECT, label: 'Shift = select' },
+  ShiftRight: { bit: XPAD.SELECT, label: 'Shift = select' },
+};
+
+const cells = {};
+const table = document.getElementById('map');
+for (const code of Object.keys(MAP)) {
+  if (MAP[code].label in cells) continue;
+  const tr = table.insertRow();
+  const td = tr.insertCell();
+  td.textContent = MAP[code].label;
+  cells[MAP[code].label] = td;
+}
+
+let held = 0;
+let ws = null;
+
+function send() {
+  for (const code of Object.keys(MAP))
+    cells[MAP[code].label].className = (held & MAP[code].bit) ? 'on' : '';
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ b: held }));
+}
+
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen = () => { document.getElementById('status').textContent = 'connected'; send(); };
+  ws.onclose = () => {
+    document.getElementById('status').textContent = 'reconnecting...';
+    setTimeout(connect, 1000);
+  };
+}
+connect();
+
+addEventListener('keydown', (e) => {
+  const m = MAP[e.code];
+  if (!m) return;
+  e.preventDefault();
+  if (e.repeat) return;
+  held |= m.bit;
+  send();
+});
+addEventListener('keyup', (e) => {
+  const m = MAP[e.code];
+  if (!m) return;
+  e.preventDefault();
+  held &= ~m.bit;
+  send();
+});
+// Losing focus must not leave keys wedged down on the ST.
+addEventListener('blur', () => { held = 0; send(); });
+</script>

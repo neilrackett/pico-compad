@@ -1,0 +1,14 @@
+{
+  "name": "pico-compad-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dev harness for COMpad: browser and simulated gamepad sources feeding the ST provider.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "license": "GPL-3.0-or-later",
+  "dependencies": {
+    "@mesmotronic/xpad": "1.2.2"
+  }
+}

@@ -1,0 +1,12 @@
+[submodule "pico-sdk"]
+	path = lib/pico-sdk
+	url = https://github.com/raspberrypi/pico-sdk.git
+[submodule "pico-extras"]
+	path = lib/pico-extras
+	url = https://github.com/raspberrypi/pico-extras.git
+[submodule "bluepad32"]
+	path = lib/bluepad32
+	url = https://github.com/ricardoquesada/bluepad32
+[submodule "xpad"]
+	path = lib/xpad
+	url = https://github.com/neilrackett/atarist-xpad.git
