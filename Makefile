@@ -14,6 +14,7 @@
 #                        program reads it back through the cookie jar
 #   make test-live       the provider follows a sender that changes
 #   make test-gamepad    a simulated controller: axes, triggers, pad type
+#   make test-wire       a real UART, loopback: the only physical test
 #   make test            all of the above, in order
 #   make simulator       drive it yourself, in a window
 #   make tos             fetch EmuTOS into build/tos (the tests do this
@@ -35,7 +36,7 @@ BUILD = build
 .DEFAULT_GOAL := test-host
 
 .PHONY: test test-host test-decode test-serial test-provider \
-        test-live test-gamepad simulator tos st clean
+        test-live test-gamepad test-wire simulator tos st clean
 
 # Not because of a shared port: no test target binds one, and each makes
 # its own temporary FIFO. Because none of them fast-forward. Every
@@ -68,6 +69,11 @@ test-live:
 test: test-host test-decode test-serial test-provider test-live \
       test-gamepad
 	@echo "--- everything passed ---"
+
+# Not in `test`: it needs hardware plugged in and a wire bridged, so it
+# would fail on any machine that has neither. Run it deliberately.
+test-wire:
+	@test/run-wire.sh
 
 simulator:
 	@harness/simulator.sh

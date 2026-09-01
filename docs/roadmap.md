@@ -124,6 +124,35 @@ over while the positions line up. `harness/xpadmap.js` maps by
 position and `test/xpadmap_test.js` fails if anyone changes it to map
 by letter.
 
+## Measuring the wire itself
+
+Everything above runs through Hatari, whose serial is byte-level
+plumbing rather than a bit-accurate UART. Framing, sync recovery and
+checksums are testable there; throughput and latency are not.
+
+`make test-wire` is the exception and the only test in the project that
+touches physical hardware. Short TX to RX on a USB serial adapter and it
+pushes real frames through a real UART at 9600, 19200 and 38400,
+reporting achieved throughput, round-trip latency and whether every byte
+survived. No ST, no Pico, no level shifter: both ends of a loopback are
+the same 3.3V pin.
+
+It is deliberately not part of `make test`, since it fails on any
+machine without an adapter plugged in and a wire bridged.
+
+Two things measured while building it, both worth knowing before they
+look like bugs:
+
+- **A USB serial port with nothing attached may never drain.** A
+  blocking write of 2400 bytes to a Raspberry Pi Debug Probe never
+  returned. The test writes non-blocking and probes with a single frame
+  first, so a missing loopback is reported in under a second rather
+  than wedging.
+- **Opening one can be slow.** That same Debug Probe takes about 40
+  seconds to open and close on macOS with an idle UART, on both the
+  `tty.` and `cu.` nodes. A CH340G is usually instant. The test says it
+  is opening before it does, so the wait does not look like a hang.
+
 ## Phase 3: hardware
 
 Pico W or Pico 2 W, Bluepad32 over BTstack for the Bluetooth HID

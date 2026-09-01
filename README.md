@@ -31,6 +31,7 @@ make test-provider   a resident provider publishes a pad, and another
 make test-live       the provider follows a sender that changes
 make test-gamepad    a simulated controller: axes, triggers, pad type
 make test            all six, in order
+make test-wire       a real UART, loopback: needs hardware
 make simulator       drive it yourself, in a window
 
 STCMD_NO_TTY=1 stcmd make st      build the ST binaries
