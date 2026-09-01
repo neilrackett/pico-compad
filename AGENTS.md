@@ -38,6 +38,7 @@ make test-provider                 residency and the cookie jar
 make test-live                     updates actually follow the sender
 make test-gamepad                  a simulated pad, full state
 make test                          all six, in order
+make test-wire                     a real UART: needs hardware
 make simulator                     hands on, in a window
 ```
 
@@ -56,6 +57,11 @@ The runners share `test/hatari.sh` the way they share `test/tos.sh`.
 Booting, the Hatari flag lore, the cleanup trap and the verdict polling
 live there, so each runner is only its own setup and assertions. Add a
 new one by copying the shortest, `run-decode.sh`.
+
+The npm version and the `esm.sh` pin in `harness/pad.html` must match.
+They are the two halves of phase 2, one automated and one hands-on, and
+the point of them is that both exercise the same library; bump them
+together or the comparison is worthless.
 
 `test-gamepad` is the only target with a node_modules dependency
 (`@mesmotronic/xpad`, via `npm install`). It is there because the test
@@ -91,8 +97,7 @@ sender outrun a slowed ST.
 
 ## Current status
 
-Phases 0 to 2 pass under emulation, though phase 2 has only ever been
-driven by a simulated pad. Phase 0: the Node harness writes
+Phases 0 to 2 pass under emulation. Phase 0: the Node harness writes
 fixed state frames into a FIFO, Hatari presents them as RS-232, and
 PIPECHK.TOS decodes them under EmuTOS, values verified byte for byte.
 Phase 1: COMPAD.PRG installs resident from AUTO, drains the AUX iorec
@@ -102,12 +107,17 @@ viewer reads the held pattern back through the cookie jar
 keyboard page exists and follows README's mapping, but no automation
 presses keys in it: a human at `node harness/server.js <fifo>` plus
 XPADVIEW.TOS under Hatari is the manual half of the exit criteria.
-Phase 2 is half done: `make test-gamepad` drives a synthetic gamepad through
-the real @mesmotronic/xpad library and asserts buttons, signed axes,
-analogue triggers, caps and pad type through the viewer. A real
-controller works through `harness/pad.html`, but no automation presses
-it, and no gamepad has been tried on real ST hardware. Phases 3 and 4
-are not started.
+Phase 2 is done in both halves. `make test-gamepad` drives a synthetic
+gamepad through the real @mesmotronic/xpad library and asserts buttons,
+signed axes, analogue triggers, caps and pad type through the viewer.
+And a real Bluetooth controller has been driven through
+`harness/pad.html` into the viewer by hand, which is the half no
+automation can cover. Phases 3 and 4 are not started.
+
+Still all under emulation, though: no gamepad has reached real ST
+hardware, because no adapter has been built. `make test-wire` is the
+one test that touches anything physical, and it measures a USB serial
+loopback rather than an ST.
 
 Nothing has run on real hardware, and serial timing under Hatari is
 meaningless: byte-level behaviour is proven, baud and latency are not.

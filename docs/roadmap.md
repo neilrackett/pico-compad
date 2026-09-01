@@ -95,7 +95,19 @@ Done, in two halves:
   the first test to cover anything but buttons.
 - **Real** (`harness/pad.html`, via `make simulator`). The same mapping
   module, the same socket, a controller in your hands. Not automated:
-  a human has to hold the pad.
+  a human has to hold the pad. Confirmed working with a real pad.
+
+**Do not hardcode a gamepad index.** `navigator.getGamepads()` returns
+a sparse array whose slots are assigned at connect time and never
+compacted, so index 0 is routinely `null` while the only pad plugged in
+sits at 1. Reconnect a pad, re-pair over Bluetooth, or run anything
+that presents a virtual controller, and you are past 0. @mesmotronic/xpad
+1.3.0 handles it: constructed with no index it binds to the first
+connected pad, reports `-1` when there is none, and rebinds when one
+arrives in a different slot. `pad.html` relies on that. `padsim.js`
+still passes an explicit 0, deliberately, because it installs its own
+synthetic pad there and must read that one rather than whatever is
+plugged into the developer's machine.
 
 Both share `harness/xpadmap.js`, so the thing a person tests and the
 thing the suite tests cannot drift apart.

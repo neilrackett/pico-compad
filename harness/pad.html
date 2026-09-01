@@ -4,26 +4,106 @@
 <meta charset="utf-8">
 <title>COMpad: gamepad</title>
 <style>
-  :root { color-scheme: dark; }
+  :root {
+    color-scheme: dark;
+  }
+
   body {
-    background: #14161a; color: #e6e6e6; margin: 0; padding: 2rem;
+    background: #14161a;
+    color: #e6e6e6;
+    margin: 0;
+    padding: 2rem;
     font: 15px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
   }
-  h1 { font-size: 1.1rem; margin: 0 0 .35rem; }
-  .sub { color: #8b93a1; margin: 0 0 1.6rem; }
-  .status { padding: .6rem .8rem; border-radius: 6px; margin-bottom: 1.6rem; }
-  .waiting { background: #3a2f13; color: #e8c877; }
-  .live { background: #16301d; color: #86d9a0; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(94px, 1fr)); gap: .4rem; max-width: 660px; }
-  .btn { padding: .4rem .5rem; border-radius: 5px; background: #1e222a; color: #6d7684; text-align: center; }
-  .btn.on { background: #2f6f45; color: #eafff1; }
-  .axes { margin-top: 1.6rem; max-width: 660px; }
-  .axis { display: grid; grid-template-columns: 4.5rem 1fr 3.5rem; gap: .6rem; align-items: center; margin-bottom: .35rem; }
-  .bar { height: 10px; background: #1e222a; border-radius: 5px; position: relative; overflow: hidden; }
-  .fill { position: absolute; top: 0; bottom: 0; background: #4a90d9; }
-  .num { text-align: right; color: #8b93a1; }
-  .note { margin-top: 1.8rem; color: #8b93a1; max-width: 660px; }
-  code { color: #c9d3e0; }
+
+  h1 {
+    font-size: 1.1rem;
+    margin: 0 0 .35rem;
+  }
+
+  .sub {
+    color: #8b93a1;
+    margin: 0 0 1.6rem;
+  }
+
+  .status {
+    padding: .6rem .8rem;
+    border-radius: 6px;
+    margin-bottom: 1.6rem;
+  }
+
+  .waiting {
+    background: #3a2f13;
+    color: #e8c877;
+  }
+
+  .live {
+    background: #16301d;
+    color: #86d9a0;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(94px, 1fr));
+    gap: .4rem;
+    max-width: 660px;
+  }
+
+  .btn {
+    padding: .4rem .5rem;
+    border-radius: 5px;
+    background: #1e222a;
+    color: #6d7684;
+    text-align: center;
+  }
+
+  .btn.on {
+    background: #2f6f45;
+    color: #eafff1;
+  }
+
+  .axes {
+    margin-top: 1.6rem;
+    max-width: 660px;
+  }
+
+  .axis {
+    display: grid;
+    grid-template-columns: 4.5rem 1fr 3.5rem;
+    gap: .6rem;
+    align-items: center;
+    margin-bottom: .35rem;
+  }
+
+  .bar {
+    height: 10px;
+    background: #1e222a;
+    border-radius: 5px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: #4a90d9;
+  }
+
+  .num {
+    text-align: right;
+    color: #8b93a1;
+  }
+
+  .note {
+    margin-top: 1.8rem;
+    color: #8b93a1;
+    max-width: 660px;
+  }
+
+  code {
+    color: #c9d3e0;
+  }
 </style>
 
 <h1>COMpad: gamepad</h1>
@@ -45,119 +125,119 @@
 </p>
 
 <script type="module">
-// Loaded from a CDN rather than node_modules, so the page needs no
-// build step and no bundler. Pinned to the same version the simulator
-// uses, so the two halves of phase 2 test the same library.
-import { Xpad } from 'https://esm.sh/@mesmotronic/xpad@1.2.2';
-import { toCompadState, XPAD, XPAD_TYPE_XBOX, XPAD_CAP_ANALOG } from './xpadmap.js';
+  // Loaded from a CDN rather than node_modules, so the page needs no
+  // build step and no bundler. Pinned to the same version the simulator
+  // uses, so the two halves of phase 2 test the same library.
+  import { Xpad } from 'https://esm.sh/@mesmotronic/xpad@1.3.0';
+  import { toCompadState, XPAD, XPAD_TYPE_XBOX, XPAD_CAP_ANALOG } from './xpadmap.js';
 
-const LABELS = [
-  ['SOUTH', XPAD.SOUTH], ['EAST', XPAD.EAST], ['WEST', XPAD.WEST], ['NORTH', XPAD.NORTH],
-  ['TL', XPAD.TL], ['TR', XPAD.TR], ['TL2', XPAD.TL2], ['TR2', XPAD.TR2],
-  ['SELECT', XPAD.SELECT], ['START', XPAD.START],
-  ['THUMBL', XPAD.THUMBL], ['THUMBR', XPAD.THUMBR],
-  ['UP', XPAD.UP], ['DOWN', XPAD.DOWN], ['LEFT', XPAD.LEFT], ['RIGHT', XPAD.RIGHT],
-  ['MODE', XPAD.MODE],
-];
+  const LABELS = [
+    ['SOUTH', XPAD.SOUTH], ['EAST', XPAD.EAST], ['WEST', XPAD.WEST], ['NORTH', XPAD.NORTH],
+    ['TL', XPAD.TL], ['TR', XPAD.TR], ['TL2', XPAD.TL2], ['TR2', XPAD.TR2],
+    ['SELECT', XPAD.SELECT], ['START', XPAD.START],
+    ['THUMBL', XPAD.THUMBL], ['THUMBR', XPAD.THUMBR],
+    ['UP', XPAD.UP], ['DOWN', XPAD.DOWN], ['LEFT', XPAD.LEFT], ['RIGHT', XPAD.RIGHT],
+    ['MODE', XPAD.MODE],
+  ];
 
-const AXES = [
-  ['lx', -127, 127], ['ly', -127, 127],
-  ['rx', -127, 127], ['ry', -127, 127],
-  ['lt', 0, 255], ['rt', 0, 255],
-];
+  const AXES = [
+    ['lx', -127, 127], ['ly', -127, 127],
+    ['rx', -127, 127], ['ry', -127, 127],
+    ['lt', 0, 255], ['rt', 0, 255],
+  ];
 
-const statusEl = document.getElementById('status');
-const buttonEls = new Map();
-const axisEls = new Map();
+  const statusEl = document.getElementById('status');
+  const buttonEls = new Map();
+  const axisEls = new Map();
 
-for (const [name, bit] of LABELS) {
-  const el = document.createElement('div');
-  el.className = 'btn';
-  el.textContent = name;
-  document.getElementById('buttons').append(el);
-  buttonEls.set(bit, el);
-}
-
-for (const [name, lo, hi] of AXES) {
-  const row = document.createElement('div');
-  row.className = 'axis';
-  row.innerHTML = `<span>${name}</span><span class="bar"><span class="fill"></span></span><span class="num">0</span>`;
-  document.getElementById('axes').append(row);
-  axisEls.set(name, { fill: row.querySelector('.fill'), num: row.querySelector('.num'), lo, hi });
-}
-
-// ------------------------------------------------------------------
-// Socket
-
-let socket = null;
-
-// Last state actually sent, so each frame can ask what changed.
-let prev = { buttons: 0, lx: 0, ly: 0, rx: 0, ry: 0, lt: 0, rt: 0 };
-
-function connect() {
-  socket = new WebSocket(`ws://${location.host}/`);
-  socket.addEventListener('open', () => {
-    // Claim analogue: unlike the keyboard page, this one means it.
-    socket.send(JSON.stringify({ desc: { type: XPAD_TYPE_XBOX, caps: XPAD_CAP_ANALOG } }));
-    // Force a resend: a new socket knows nothing of what the old one said.
-    prev = { buttons: -1, lx: 0, ly: 0, rx: 0, ry: 0, lt: 0, rt: 0 };
-  });
-  socket.addEventListener('close', () => setTimeout(connect, 700));
-}
-connect();
-
-// ------------------------------------------------------------------
-// Poll
-
-const xpad = new Xpad(0);
-let seenPad = false;
-
-function frame() {
-  xpad.update();
-
-  if (xpad.connected !== seenPad) {
-    seenPad = xpad.connected;
-    statusEl.className = `status ${seenPad ? 'live' : 'waiting'}`;
-    statusEl.textContent = seenPad
-      ? `Pad connected: ${xpad.gamepad?.id ?? 'unknown'}`
-      : 'Pad disconnected. Press a button to wake it.';
+  for (const [name, bit] of LABELS) {
+    const el = document.createElement('div');
+    el.className = 'btn';
+    el.textContent = name;
+    document.getElementById('buttons').append(el);
+    buttonEls.set(bit, el);
   }
 
-  const s = toCompadState(xpad.state);
+  for (const [name, lo, hi] of AXES) {
+    const row = document.createElement('div');
+    row.className = 'axis';
+    row.innerHTML = `<span>${name}</span><span class="bar"><span class="fill"></span></span><span class="num">0</span>`;
+    document.getElementById('axes').append(row);
+    axisEls.set(name, { fill: row.querySelector('.fill'), num: row.querySelector('.num'), lo, hi });
+  }
 
-  // This page's whole job is low input latency, and frame() runs at the
-  // display's refresh rate. So touch only what moved: repaint the bits
-  // that actually changed, and do not build a JSON string every frame
-  // just to discover nothing happened.
-  const moved = s.buttons ^ prev.buttons;
-  if (moved) {
-    for (const [bit, el] of buttonEls) {
-      if (moved & bit) el.classList.toggle('on', (s.buttons & bit) !== 0);
+  // ------------------------------------------------------------------
+  // Socket
+
+  let socket = null;
+
+  // Last state actually sent, so each frame can ask what changed.
+  let prev = { buttons: 0, lx: 0, ly: 0, rx: 0, ry: 0, lt: 0, rt: 0 };
+
+  function connect() {
+    socket = new WebSocket(`ws://${location.host}/`);
+    socket.addEventListener('open', () => {
+      // Claim analogue: unlike the keyboard page, this one means it.
+      socket.send(JSON.stringify({ desc: { type: XPAD_TYPE_XBOX, caps: XPAD_CAP_ANALOG } }));
+      // Force a resend: a new socket knows nothing of what the old one said.
+      prev = { buttons: -1, lx: 0, ly: 0, rx: 0, ry: 0, lt: 0, rt: 0 };
+    });
+    socket.addEventListener('close', () => setTimeout(connect, 700));
+  }
+  connect();
+
+  // ------------------------------------------------------------------
+  // Poll
+
+  const xpad = new Xpad();
+  let seenPad = false;
+
+  function frame() {
+    xpad.update();
+
+    if (xpad.connected !== seenPad) {
+      seenPad = xpad.connected;
+      statusEl.className = `status ${seenPad ? 'live' : 'waiting'}`;
+      statusEl.textContent = seenPad
+        ? `Pad connected: ${xpad.gamepad?.id ?? 'unknown'}`
+        : 'Pad disconnected. Press a button to wake it.';
     }
-  }
 
-  let axisMoved = false;
-  for (const [name, els] of axisEls) {
-    const v = s[name];
-    if (v === prev[name]) continue;
-    axisMoved = true;
-    const span = els.hi - els.lo;
-    els.fill.style.left = `${((Math.min(0, v) - els.lo) / span) * 100}%`;
-    els.fill.style.width = `${(Math.abs(v) / span) * 100}%`;
-    els.num.textContent = String(v);
-  }
+    const s = toCompadState(xpad.state);
 
-  // Buttons go as "b", matching the keyboard page, so the server needs
-  // one message format.
-  if ((moved || axisMoved) && socket && socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify({
-      b: s.buttons, lx: s.lx, ly: s.ly, rx: s.rx, ry: s.ry, lt: s.lt, rt: s.rt,
-    }));
+    // This page's whole job is low input latency, and frame() runs at the
+    // display's refresh rate. So touch only what moved: repaint the bits
+    // that actually changed, and do not build a JSON string every frame
+    // just to discover nothing happened.
+    const moved = s.buttons ^ prev.buttons;
+    if (moved) {
+      for (const [bit, el] of buttonEls) {
+        if (moved & bit) el.classList.toggle('on', (s.buttons & bit) !== 0);
+      }
+    }
+
+    let axisMoved = false;
+    for (const [name, els] of axisEls) {
+      const v = s[name];
+      if (v === prev[name]) continue;
+      axisMoved = true;
+      const span = els.hi - els.lo;
+      els.fill.style.left = `${((Math.min(0, v) - els.lo) / span) * 100}%`;
+      els.fill.style.width = `${(Math.abs(v) / span) * 100}%`;
+      els.num.textContent = String(v);
+    }
+
+    // Buttons go as "b", matching the keyboard page, so the server needs
+    // one message format.
+    if ((moved || axisMoved) && socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({
+        b: s.buttons, lx: s.lx, ly: s.ly, rx: s.rx, ry: s.ry, lt: s.lt, rt: s.rt,
+      }));
+    }
+    prev = s;
+
+    requestAnimationFrame(frame);
   }
-  prev = s;
 
   requestAnimationFrame(frame);
-}
-
-requestAnimationFrame(frame);
 </script>

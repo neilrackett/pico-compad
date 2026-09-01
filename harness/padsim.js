@@ -74,6 +74,11 @@ globalThis.window = globalThis.window || {
 globalThis.addEventListener = globalThis.addEventListener || (() => {});
 globalThis.removeEventListener = globalThis.removeEventListener || (() => {});
 
+// Explicit slot 0, not auto-detect. From 1.3.0 an Xpad with no index
+// binds to whichever pad is present, which is right for a page with a
+// real controller and wrong for a test: this one installs its own pad
+// at slot 0 and should read that one, not something a developer left
+// plugged into the machine.
 const xpad = new Xpad(0);
 
 // ------------------------------------------------------------------

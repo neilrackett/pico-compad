@@ -9,6 +9,6 @@
   },
   "license": "GPL-3.0-or-later",
   "dependencies": {
-    "@mesmotronic/xpad": "1.2.2"
+    "@mesmotronic/xpad": "1.3.0"
   }
 }

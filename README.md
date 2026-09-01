@@ -14,12 +14,13 @@ The wire protocol, though, is deliberately platform-neutral: any machine with a 
 
 ## Status
 
-Phases 0 to 2 pass under emulation. A keyboard in a browser, or a
-simulated gamepad driven through the real
+Phases 0 to 2 pass under emulation. A browser keyboard, a simulated
+gamepad, or **a real Bluetooth controller** driven through
 [@mesmotronic/xpad](https://www.npmjs.com/package/@mesmotronic/xpad)
-library, reaches an `XPAD` block on the ST, and xpad's own viewer reads
-it back through the cookie jar with axes, triggers and pad type intact.
-Nothing has run on real hardware, and no adapter has been built: see
+reaches an `XPAD` block on the ST, and xpad's own viewer reads it back
+through the cookie jar with axes, triggers and pad type intact.
+
+The ST is still emulated, and no adapter has been built: see
 [docs/roadmap.md](docs/roadmap.md).
 
 ```
