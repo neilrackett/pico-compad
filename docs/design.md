@@ -30,8 +30,11 @@ rewritten per platform:
 
 1. **Wire protocol** plus a reference decoder in portable C, no platform
    headers. Host-testable.
-2. **Per-platform UART glue.** Init, baud, RX interrupt hook. On the ST
-   that is MFP 68901 channel 12. Roughly 60 lines.
+2. **Per-platform UART glue.** Init, baud, and getting at received
+   bytes. On the ST today that is TOS: `Rsconf` for the line settings
+   and draining the AUX iorec ring from `etv_timer`, which is what
+   `compad.c` does. Taking MFP 68901 channel 12 directly, roughly 60
+   lines, is phase 3 work and is not written; see hardware.md.
 3. **Provider binding.** On the ST, `xpad_provider.c` publishing the
    cookie jar block. Unchanged whatever the transport.
 

@@ -3,9 +3,11 @@
 
 # Hardware
 
-Building the adapter, and which socket to plug it into. Nothing
-here has been built yet: the phases so far run entirely under
-emulation.
+Building the adapter, and which socket to plug it into. No adapter has
+been built yet, and the ST side runs only under emulation. The one
+exception is the wire: `make test-wire` pushes real frames through a
+real UART with TX shorted to RX, so throughput and latency have been
+measured on hardware even though nothing has been plugged into an ST.
 
 ## Pico side
 

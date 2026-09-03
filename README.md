@@ -21,9 +21,12 @@ reaches an `XPAD` block on the ST, and xpad's own viewer reads it back
 through the cookie jar with axes, triggers and pad type intact.
 
 The ST is still emulated, and no adapter has been built: see
-[docs/roadmap.md](docs/roadmap.md).
+[docs/roadmap.md](docs/roadmap.md). Phase 3, the Pico firmware, is the
+current one. The wire itself has been measured on real hardware through
+`make test-wire`, which is the only thing here that has.
 
 ```
+make                 the default goal, same as test-host
 make test-host       host tests only: decoder, mapping, harness socket
 make test-decode     compad.c's own assertions, run on the ST
 make test-serial     bytes cross the emulated link and frame up
@@ -34,6 +37,8 @@ make test-gamepad    a simulated controller: axes, triggers, pad type
 make test            all six, in order
 make test-wire       a real UART, loopback: needs hardware
 make simulator       drive it yourself, in a window
+make tos             fetch or locate EmuTOS, and print where it landed
+make clean           both halves
 
 STCMD_NO_TTY=1 stcmd make st      build the ST binaries
 ```
@@ -62,11 +67,18 @@ bits move in `XPADVIEW.TOS`.
 | Path              | Contents                                                           |
 | ----------------- | ------------------------------------------------------------------ |
 | `rp/`             | Pico W firmware (Phase 3; placeholder until then)                  |
-| `target/atarist/` | ST provider, the wire-protocol decoder, the Phase 0 pipe check     |
-| `harness/`        | dev rig: frame writer, server, keyboard and gamepad pages          |
+| `target/atarist/` | ST provider, the wire-protocol decoder, the test programs, and `XPADVIEW.TOS` built from the submodule |
+| `harness/`        | dev rig: frame writer, server, keyboard and gamepad pages, and `wire.js`, the loopback measurement |
 | `test/`           | host tests for the decoder, Hatari end-to-end runners              |
 | `docs/`           | protocol, hardware, roadmap, design notes                          |
-| `lib/`            | submodules: `xpad`, plus `pico-sdk`, `pico-extras` and `bluepad32` |
+| `lib/`            | submodules: `xpad` at v1.0.0, plus `pico-sdk`, `pico-extras` and `bluepad32` |
+
+Two different things are called xpad, and it is worth keeping them
+apart. [atarist-xpad](https://github.com/neilrackett/atarist-xpad) is
+the C library in `lib/xpad`, BSD-2-Clause, and it defines the `XPAD`
+block this publishes. [@mesmotronic/xpad](https://www.npmjs.com/package/@mesmotronic/xpad)
+is an unrelated npm package that reads browser gamepads, used only by
+the development harness and never by anything that ships.
 
 ## Documentation
 

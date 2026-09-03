@@ -161,9 +161,12 @@ static void publish_shadow(void)
 
 /*
  * Called from the trampoline at ~200 Hz, in interrupt context. Drains
- * the AUX ring the way Bconin would: TOS's RX interrupt owns the head,
- * this owns the tail, and a single-producer single-consumer ring needs
- * no masking. Nothing here calls the BIOS or allocates.
+ * the AUX ring the way Bconin would: TOS's RX interrupt appends at the
+ * tail (`ibuftl`) and this consumes from the head (`ibufhd`), so a
+ * single-producer single-consumer ring needs no masking. Reading those
+ * two the other way round is the exact bug design.md warns about, and
+ * it passes every test that holds a fixed pattern. Nothing here calls
+ * the BIOS or allocates.
  */
 void compad_tick(void)
 {

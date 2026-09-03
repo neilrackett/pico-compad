@@ -3,9 +3,12 @@
 
 # Roadmap
 
-Phases 0 to 2 pass under emulation, though phase 2 has only been driven
-by a simulated pad; 3 and 4 are not started. See AGENTS.md for what
-that means in practice.
+Phases 0 to 2 pass under emulation, phase 2 in both halves: a simulated
+pad under `make test-gamepad`, and a real Bluetooth controller by hand
+through `harness/pad.html`. Phase 3 is the current one and is not
+started; 4 follows it. The wire itself has been measured on real
+hardware (`make test-wire`), but nothing has reached an ST. See
+AGENTS.md for what that means in practice.
 
 Every phase here targets the Atari ST family. Other platforms are not
 on this roadmap at all: if one happens, it arrives as a new directory

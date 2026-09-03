@@ -24,8 +24,11 @@
 // X to X here would put every face button one quarter turn out, and it
 // would look plausible on screen.
 //
-// Verified against @mesmotronic/xpad 1.2.1: pressing the button the
-// library calls X sets W3C index 2, the left one.
+// Verified by hand against @mesmotronic/xpad 1.2.1: pressing the button
+// the library calls X sets W3C index 2, the left one. The pin has since
+// moved to 1.3.0 without that check being repeated by hand, which is
+// tolerable only because `make test-gamepad` drives whatever version is
+// pinned and asserts the face buttons through the viewer.
 
 // atarist-xpad button bits (src/xpad.h). Mirrored rather than parsed:
 // the harness stands in for an adapter, and adapters know the wire

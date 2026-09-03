@@ -161,6 +161,10 @@ for the descriptor repeat below. The browser and gamepad senders both
 do this; `harness/frames.js` deliberately does not, because the phase 0
 pipe check wants an unconditional stream. An adapter should.
 
-**19200 is the default.** 38400 is available on the ST via Timer D
-(prescale /4, count 1: 2457600 / 4 / 16 = 38400 exactly) once off the
-TOS serial path.
+**9600 is what runs today.** The ST provider sets it in `compad.c`, the
+phase 0 pipe check sets it, and every emulated test uses it. 19200 is
+the intended default for the adapter, and 38400 is available on the ST
+via Timer D (prescale /4, count 1: 2457600 / 4 / 16 = 38400 exactly),
+but both wait on phase 3 and getting off the TOS serial path. Nothing
+in the tree selects either yet, beyond `harness/wire.js` defaulting to
+19200 for its loopback measurements.

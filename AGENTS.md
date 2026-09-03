@@ -14,6 +14,12 @@ platforms in the future tense. README.md is the overview and docs/ holds
 the detail: read docs/protocol.md before touching the wire format. This
 file only covers working practices.
 
+The ABI on the far end is settled: xpad reached **v1.0.0** on
+2026-09-03, and MD/Sidepad v1.1.0 shipped the same day as the first
+public provider of it. So COMpad is not proving the interface any more,
+only a second transport for it, and a working reference implementation
+exists to compare against when a consumer misreads a block.
+
 ## Layout
 
 See README's Layout section. The split that matters: the wire-protocol
@@ -24,7 +30,10 @@ why it stays clean even though only the ST uses it.
 
 xpad is a **submodule** (`lib/xpad`), not a vendored copy, so the two
 projects stay in sync while both evolve. Do not edit files under
-`lib/`; change them upstream and bump.
+`lib/`; change them upstream and bump. The pin is xpad **v1.0.0**, its
+first tagged release: prefer bumping to a tag rather than to whatever
+`main` happens to hold, so a checkout of COMpad names the ABI version
+it was built against.
 
 ## Building and testing
 
@@ -40,6 +49,8 @@ make test-gamepad                  a simulated pad, full state
 make test                          all six, in order
 make test-wire                     a real UART: needs hardware
 make simulator                     hands on, in a window
+make tos                           fetch or locate EmuTOS, print the path
+make clean                         both halves
 ```
 
 `test-host` is the default goal and needs nothing but a host compiler
@@ -86,7 +97,8 @@ real TOS version must be pointed at a real ROM.
 
 The xpad conventions apply here unchanged: run the host tests on every
 change, build with warnings fatal, and treat "compiles" as far short of
-"works". Nothing here has run on real hardware yet.
+"works". Only `make test-wire` has touched anything physical, and only
+a USB serial loopback: no part of this has reached an ST.
 
 The emulated targets must not run concurrently, and the Makefile is
 marked .NOTPARALLEL rather than relying on nobody passing -j. Not
@@ -119,8 +131,11 @@ hardware, because no adapter has been built. `make test-wire` is the
 one test that touches anything physical, and it measures a USB serial
 loopback rather than an ST.
 
-Nothing has run on real hardware, and serial timing under Hatari is
-meaningless: byte-level behaviour is proven, baud and latency are not.
+Serial timing under Hatari stays meaningless: framing, sync recovery
+and checksums are proven there, baud and latency are not. `test-wire`'s
+loopback figures are the only measured throughput and latency in the
+project, and they describe a 3.3V pin shorted to itself, not an ST's
+MFP through a level shifter.
 
 ## Hard rules
 
