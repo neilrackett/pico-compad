@@ -174,6 +174,54 @@ Pico W or Pico 2 W, Bluepad32 over BTstack for the Bluetooth HID
 side. Wiring, connectors and the move onto a private MFP handler
 are in [hardware.md](hardware.md).
 
+**Pairing has no pairing mode, deliberately.** Scan while a pad slot is
+empty, stop when they are full, and always allow incoming connections.
+A new pad connects the first time it is put into pairing mode, and
+after that it reconnects on its own because it is bonded, so the
+ordinary case needs no interface at all. This follows Bluepad32 rather
+than fighting it: `uni_bt_enable_new_connections_safe()` is deprecated
+in 4.2.0 in favour of `uni_bt_start_scanning_and_autoconnect_safe()`
+and `uni_bt_stop_scanning_safe()`, and bonded devices reconnect even
+while scanning is off.
+
+The one thing that cannot be expressed without hardware is forgetting a
+bond, because the pad you would press buttons on is the one that is not
+talking to you. That is a long press on a button to
+`uni_bt_del_keys_safe()`. A button with no feedback cannot be told from
+a crash, so the CYW43 onboard LED carries the state, following what an
+Xbox controller does so that it needs no explaining:
+
+| LED | State |
+|-----|-------|
+| Rapid flash | Looking for a new pad |
+| Slow blink | Waiting for a known pad to come back |
+| Solid | Connected |
+
+Those three come from one fact rather than a mode the firmware has to
+track. A slot is free either way, so the adapter is always scanning and
+always accepting a bonded pad; what differs is whether any bond exists.
+No stored keys means nothing can reconnect, so it is a new pad or
+nothing: rapid flash. Keys stored means the pad is most likely just out
+of range or asleep: slow pulse. The button's long press wipes the keys
+and therefore moves the LED from pulse to flash by itself, which is the
+confirmation that it worked, so no separate acknowledgement blink is
+needed.
+
+All three are plain on/off timings, not brightness fades. The rates
+only have to be obviously different from each other: rapid while
+looking, long while waiting, steady once connected. So no PWM is
+wanted anywhere, which is just as well, because the CYW43 LED hangs
+off the wireless chip rather than an RP2040 pin and cannot do it.
+
+Pairing does **not** go through ST software. The adapter has to be
+pairable before any ST software is installed and on a machine where the
+AUTO folder driver did not load, which is when a pad is most needed; a
+utility cannot open AUX behind the resident provider that owns it; and
+xpad's `XPAD_REQ` is the wrong home, frozen at v1.0.0 with rumble and
+LED only, for what is link management rather than pad state. The type
+`0xE` request frame keeps a spare byte at offset 6 if a remote trigger
+is ever wanted, as an addition rather than the mechanism.
+
 ## Phase 4: rumble
 
 Request frames from ST to adapter. Consumer writes `req->rumble[0][0]`

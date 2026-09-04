@@ -14,6 +14,27 @@ measured on hardware even though nothing has been plugged into an ST.
 Pico W or Pico 2 W, with Bluepad32 over BTstack handling the Bluetooth
 HID side.
 
+Fit one tactile switch from a spare GPIO to ground, on the internal
+pull-up. It is not a pairing button: pairing needs no button, and
+roadmap.md's phase 3 says why. Its only job is a long press to forget
+bonded pads, which nothing else can express.
+
+Status is one LED, on the same three timings an Xbox controller uses:
+rapid flash looking for a new pad, long blink waiting for a known one,
+solid when connected. Plain on/off in every case, so any LED will do.
+
+Drive both the CYW43 onboard LED and one on a spare GPIO, behind a
+single `led_set(state)`. The onboard one costs no parts and works on a
+bare board on the bench. The external one is the one anybody actually
+sees, since the onboard LED is inside the enclosure, and it is the only
+one that can report a failure of the radio: `cyw43_arch_gpio_put()`
+goes over the gSPI link to the wireless chip, so it says nothing at all
+until `cyw43_arch_init()` has succeeded, and a dead radio then looks
+exactly like a dead board. A GPIO LED lights from the first
+millisecond of `main()`. Reading BOOTSEL instead would save the
+switch, at the cost of briefly disabling XIP and interrupts on a device
+holding a real-time UART, which is not worth the pennies saved.
+
 Conversions from Bluepad32 to xpad conventions:
 
 ```
