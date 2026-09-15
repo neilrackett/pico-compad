@@ -25,13 +25,19 @@ set(BLUEPAD32_ROOT ${COMPAD_ROOT}/lib/bluepad32)
 # only if the directory it names actually exists, because a stale
 # PICO_SDK_PATH left over from another project is common and the
 # failure it causes here reads as a broken checkout.
+# "Usable" means "contains pico_sdk_init.cmake", the same test the error
+# below uses. Checking only that the directory exists would accept a
+# stale path that still exists but is no longer an SDK, and then fail
+# later with a message blaming the submodule for the environment.
 if(NOT DEFINED PICO_SDK_PATH)
-    if(DEFINED ENV{PICO_SDK_PATH} AND IS_DIRECTORY $ENV{PICO_SDK_PATH})
+    if(DEFINED ENV{PICO_SDK_PATH} AND
+       EXISTS $ENV{PICO_SDK_PATH}/pico_sdk_init.cmake)
         set(PICO_SDK_PATH $ENV{PICO_SDK_PATH})
     else()
         if(DEFINED ENV{PICO_SDK_PATH})
-            message(STATUS
-                "Ignoring PICO_SDK_PATH=$ENV{PICO_SDK_PATH}: not a directory")
+            message(WARNING
+                "Ignoring PICO_SDK_PATH=$ENV{PICO_SDK_PATH}: no Pico SDK "
+                "there. Using the submodule instead.")
         endif()
         set(PICO_SDK_PATH ${COMPAD_ROOT}/lib/pico-sdk)
         set(ENV{PICO_SDK_PATH} ${PICO_SDK_PATH})
@@ -40,8 +46,9 @@ endif()
 
 if(NOT EXISTS ${PICO_SDK_PATH}/pico_sdk_init.cmake)
     message(FATAL_ERROR
-        "No Pico SDK at ${PICO_SDK_PATH}. "
-        "Run: git submodule update --init --recursive lib/pico-sdk")
+        "No Pico SDK at ${PICO_SDK_PATH}. If you passed -DPICO_SDK_PATH, "
+        "check it. Otherwise run: "
+        "git submodule update --init --recursive lib/pico-sdk")
 endif()
 
 # BTstack from the Pico SDK rather than from Bluepad32's own copy, which
@@ -62,9 +69,14 @@ add_executable(compad
     src/compad_platform.c
 )
 
+# encode.h includes the real xpad, Bluepad32 and protocol headers rather
+# than copying their constants. protocol.h is the shared wire contract
+# that the ST target also compiles, not ST code: it is portable C.
 target_include_directories(compad PRIVATE
     src
     ${BLUEPAD32_ROOT}/src/components/bluepad32/include
+    ${COMPAD_ROOT}/lib/xpad/src
+    ${COMPAD_ROOT}/target/atarist/src
 )
 
 # Needed for btstack_config.h and sdkconfig.h to be found by libbluepad32
@@ -87,5 +99,14 @@ add_subdirectory(${BLUEPAD32_ROOT}/src/components/bluepad32 libbluepad32)
 # mid frame would corrupt it.
 pico_enable_stdio_usb(compad 1)
 pico_enable_stdio_uart(compad 0)
+
+# USB stdio installs a repeating alarm to pump TinyUSB, 1000 times a
+# second by default. This device's actual job is a 50 Hz tick next to a
+# latency-sensitive radio, so 20x that rate in timer interrupts buys
+# nothing. 10 ms keeps the console usable for bring-up at a hundredth
+# of the interrupt load.
+target_compile_definitions(compad PRIVATE
+    PICO_STDIO_USB_TASK_INTERVAL_US=10000
+)
 
 pico_add_extra_outputs(compad)

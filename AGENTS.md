@@ -34,12 +34,17 @@ projects stay in sync while both evolve. Do not edit files under
 prefer bumping to a tag rather than to whatever `main` happens to hold,
 so a checkout of COMpad names the ABI version it was built against.
 
-The firmware mirrors a handful of constants from `lib/xpad/src/xpad.h`
-and from Bluepad32 into `rp/src/encode.h` rather than including either,
-which is what keeps that file host-testable. `test/encode_test.c`
-includes the real headers and asserts the copies still match, so the
-mirroring cannot rot quietly. Bump the submodule and run `make` before
-assuming a change there is harmless.
+`rp/src/encode.h` includes the real `xpad.h`, Bluepad32 and
+`protocol.h` headers rather than copying their constants. All three are
+stdint-only, so this costs three `-I` flags and buys a compile-time
+guarantee instead of a test somebody has to remember to write. It did
+briefly mirror them, and the copy nobody had got round to asserting was
+Bluepad32's, whose bits are `BIT(enum)` and would rotate silently on an
+upstream reorder. What `encode.h` stays free of is Pico SDK and BTstack
+headers, which is what keeps the host build able to test it.
+
+Both `make test-host` and `rp/CMakeLists.txt` therefore carry the same
+three include paths. Keep them in step.
 
 ## Building and testing
 

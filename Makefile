@@ -37,7 +37,7 @@ BUILD = build
 .DEFAULT_GOAL := test-host
 
 .PHONY: test test-host test-decode test-serial test-provider \
-        test-live test-gamepad test-wire simulator tos st clean
+        test-live test-gamepad test-wire simulator tos st firmware clean
 
 # Not because of a shared port: no test target binds one, and each makes
 # its own temporary FIFO. Because none of them fast-forward. Every
@@ -50,23 +50,26 @@ test-host: | $(BUILD)
 	cc -Wall -Wextra -Werror -std=c11 test/protocol_test.c -o $(BUILD)/protocol_test
 	@$(BUILD)/protocol_test
 	@echo
-	cc -Wall -Wextra -Werror -std=c11 test/encode_test.c -o $(BUILD)/encode_test
+	cc -Wall -Wextra -Werror -std=c11 $(FW_INC) test/encode_test.c -o $(BUILD)/encode_test
 	@$(BUILD)/encode_test
 	@node test/xpadmap_test.js
 	@node test/server_test.js
 
+# rp/src/encode.h includes the real xpad, Bluepad32 and protocol headers
+# rather than copying their constants, so the host build of the firmware
+# encoder needs the same three include paths the firmware build uses.
+FW_INC = -I lib/xpad/src \
+         -I lib/bluepad32/src/components/bluepad32/include \
+         -I target/atarist/src
+
 # The adapter firmware. Everything it needs is in lib/, so this wants
 # nothing installed but CMake and arm-none-eabi-gcc, and it never runs
 # as part of `test`: it is a cross build, not a check.
-.PHONY: firmware firmware-clean
 firmware:
 	@cmake -B rp/build -S rp
 	@cmake --build rp/build -j
 	@echo
 	@echo "flash rp/build/compad.uf2: hold BOOTSEL, plug in, copy it across"
-
-firmware-clean:
-	@rm -rf rp/build
 
 test-decode:
 	@test/run-decode.sh
@@ -110,5 +113,5 @@ $(BUILD):
 	@mkdir -p $(BUILD)
 
 clean:
-	rm -rf $(BUILD)
+	rm -rf $(BUILD) rp/build
 	$(MAKE) -C target/atarist clean

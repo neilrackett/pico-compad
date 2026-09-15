@@ -30,17 +30,15 @@
 /* The protocol's pad index is two bits, and Xpad carries four pads. */
 #define COMPAD_PADS 4
 
-/* XPAD_TYPE_GAMEPAD, from lib/xpad/src/xpad.h. Nothing here can tell a
- * DualSense from an Xbox pad without a table of vendor ids, and saying
- * "gamepad" is honest where guessing would not be. */
-#define COMPAD_PAD_TYPE 2
+/* Nothing here can tell a DualSense from an Xbox pad without a table of
+ * vendor ids, and XPAD_TYPE_GAMEPAD is honest where guessing would not
+ * be. The constant comes from xpad.h through encode.h. */
 
 typedef struct
 {
     bool present;
     COMPAD_STATE state;
     COMPAD_STATE sent;
-    bool ever_sent;
     uint8_t since_send;     /* ticks since this pad's last frame     */
     uint8_t since_descriptor;
 } COMPAD_SLOT;
@@ -77,7 +75,6 @@ static void send_state(uint8_t pad)
     wire_write(f, CE_STATE_LEN);
 
     slots[pad].sent = slots[pad].state;
-    slots[pad].ever_sent = true;
     slots[pad].since_send = 0;
 }
 
@@ -87,7 +84,7 @@ static void send_descriptor(uint8_t pad)
 
     /* No caps claimed. XPAD_CAP_RUMBLE would be a promise this does not
      * keep yet: request frames are phase 4. */
-    compad_descriptor_frame(pad, COMPAD_PAD_TYPE, 0, 0, f);
+    compad_descriptor_frame(pad, XPAD_TYPE_GAMEPAD, 0, 0, f);
     wire_write(f, CE_DESC_LEN);
 
     slots[pad].since_descriptor = 0;
@@ -101,9 +98,21 @@ static void send_descriptor(uint8_t pad)
  * Whether anything is bonded decides what the LED means: with no
  * stored keys nothing can reconnect, so the adapter is looking for a
  * new pad; with keys, it is waiting for one it knows. That is the whole
- * of the "no pairing mode" design, and it needs no state of its own.
+ * of the "no pairing mode" design.
+ *
+ * Cached, because the answer changes about twice in a device's life and
+ * the question is not free to ask: each lookup walks up to 16 TLV tags
+ * and each of those rescans the flash bank from the start. It is XIP
+ * reads rather than a flash transaction, so this is tidiness rather
+ * than a fire, but it is asked 50 times a second while idle.
+ *
+ * Refreshed at the three points that can change it, all of which the
+ * file already had: startup, the forget button, and a disconnect, which
+ * is when a newly bonded pad's key first matters to the LED.
  */
-static bool have_bonds(void)
+static bool bonds;
+
+static bool scan_bonds(void)
 {
     btstack_link_key_iterator_t it;
     bd_addr_t addr;
@@ -122,6 +131,11 @@ static bool have_bonds(void)
     return any;
 }
 
+static void refresh_bonds(void)
+{
+    bonds = scan_bonds();
+}
+
 static bool any_connected(void)
 {
     int i;
@@ -135,8 +149,24 @@ static bool any_connected(void)
     return false;
 }
 
+/*
+ * Only on a change, which matters more than it looks.
+ * cyw43_arch_gpio_put() is not a pin write: the onboard LED hangs off
+ * the wireless chip, so it becomes an SDPCM control frame over the gSPI
+ * bus and then a busy-poll for the reply, hundreds of microseconds at a
+ * time. Called unconditionally from a 20 ms tick that is 50 of those a
+ * second, every one of them redundant while a pad is connected and the
+ * LED is already solid, competing with live Bluetooth traffic on the
+ * same chip and the same run loop. One bool removes all of it.
+ */
 static void led_set(bool on)
 {
+    static int shown = -1; /* neither on nor off, so the first call writes */
+
+    if (shown == (int)on)
+        return;
+
+    shown = on;
     cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, on);
     gpio_put(COMPAD_LED_PIN, on);
 }
@@ -158,7 +188,7 @@ static void led_tick(void)
         return;
     }
 
-    period = have_bonds() ? COMPAD_BLINK_SLOW : COMPAD_BLINK_FAST;
+    period = bonds ? COMPAD_BLINK_SLOW : COMPAD_BLINK_FAST;
 
     blink++;
     led_set((blink / period) & 1);
@@ -186,15 +216,14 @@ static void button_tick(void)
         return;
     }
 
-    if (held_ticks > hold)
-        return;
-
-    held_ticks++;
+    if (held_ticks <= hold)
+        held_ticks++;
 
     if (held_ticks == hold)
     {
         logi("compad: forgetting bonded pads\n");
         uni_bt_del_keys_safe();
+        refresh_bonds();
     }
 }
 
@@ -212,6 +241,14 @@ static void tick(btstack_timer_source_t *ts)
 {
     int i;
 
+    /* Re-armed first. set_timer is relative to now, so re-arming after
+     * the sends would make the period 20 ms plus however long they
+     * took, and the descriptor and keepalive intervals are counted in
+     * ticks: they would stretch with it and stop matching the rates
+     * config.h claims. */
+    btstack_run_loop_set_timer(ts, COMPAD_TICK_MS);
+    btstack_run_loop_add_timer(ts);
+
     for (i = 0; i < COMPAD_PADS; i++)
     {
         COMPAD_SLOT *s = &slots[i];
@@ -219,10 +256,10 @@ static void tick(btstack_timer_source_t *ts)
         if (!s->present)
             continue;
 
-        if (s->since_descriptor < 0xff)
-            s->since_descriptor++;
-        if (s->since_send < 0xff)
-            s->since_send++;
+        /* Neither counter can run away: both are reset below, in this
+         * same pass, well before a uint8_t could wrap. */
+        s->since_descriptor++;
+        s->since_send++;
 
         /* Repeated, not sent once: the provider discards the serial
          * ring when it installs, so a descriptor that arrived while
@@ -230,23 +267,20 @@ static void tick(btstack_timer_source_t *ts)
         if (s->since_descriptor >= COMPAD_DESCRIPTOR_EVERY)
             send_descriptor((uint8_t)i);
 
-        if (!s->ever_sent || compad_state_differs(&s->state, &s->sent) ||
+        if (compad_state_differs(&s->state, &s->sent) ||
             s->since_send >= COMPAD_KEEPALIVE_EVERY)
             send_state((uint8_t)i);
     }
 
     led_tick();
     button_tick();
-
-    btstack_run_loop_set_timer(ts, COMPAD_TICK_MS);
-    btstack_run_loop_add_timer(ts);
 }
 
 /* ------------------------------------------------------------------ */
 /* Platform                                                            */
 /* ------------------------------------------------------------------ */
 
-static void compad_init(int argc, const char **argv)
+static void compad_platform_init(int argc, const char **argv)
 {
     ARG_UNUSED(argc);
     ARG_UNUSED(argv);
@@ -273,8 +307,9 @@ static void compad_on_init_complete(void)
     btstack_run_loop_set_timer(&tick_timer, COMPAD_TICK_MS);
     btstack_run_loop_add_timer(&tick_timer);
 
+    refresh_bonds();
     logi("compad: ready, %s\n",
-         have_bonds() ? "waiting for a known pad" : "looking for a new pad");
+         bonds ? "waiting for a known pad" : "looking for a new pad");
 }
 
 static uni_error_t compad_on_device_discovered(bd_addr_t addr,
@@ -293,6 +328,13 @@ static uni_error_t compad_on_device_discovered(bd_addr_t addr,
     return UNI_ERROR_SUCCESS;
 }
 
+/*
+ * Empty, but not optional: Bluepad32 calls this and on_oob_event
+ * without a null check (uni_hid_device.c), so leaving them out of the
+ * vtable is a jump through NULL. get_property is null-checked there and
+ * is therefore absent rather than stubbed. The three look
+ * interchangeable and are not.
+ */
 static void compad_on_device_connected(uni_hid_device_t *d)
 {
     ARG_UNUSED(d);
@@ -315,6 +357,10 @@ static void compad_on_device_disconnected(uni_hid_device_t *d)
     send_state((uint8_t)idx);
 
     memset(&slots[idx], 0, sizeof(slots[idx]));
+
+    /* A pad that has just been used is a pad that has just bonded, and
+     * the LED is about to start caring which. */
+    refresh_bonds();
 }
 
 static uni_error_t compad_on_device_ready(uni_hid_device_t *d)
@@ -329,6 +375,14 @@ static uni_error_t compad_on_device_ready(uni_hid_device_t *d)
 
     send_descriptor((uint8_t)idx);
     send_state((uint8_t)idx);
+
+    /* Phase the repeats apart by slot, after the send that zeroes the
+     * counter. Four pads that connected together would otherwise keep
+     * their counters in step for ever and put four descriptors on a
+     * 9600 link in the same tick, which is 79 ms of wire time inside a
+     * 20 ms callback. */
+    slots[idx].since_descriptor =
+        (uint8_t)(idx * (COMPAD_DESCRIPTOR_EVERY / COMPAD_PADS));
 
     return UNI_ERROR_SUCCESS;
 }
@@ -359,13 +413,6 @@ static void compad_on_controller_data(uni_hid_device_t *d,
                &slots[idx].state);
 }
 
-static const uni_property_t *compad_get_property(uni_property_idx_t idx)
-{
-    ARG_UNUSED(idx);
-
-    return NULL;
-}
-
 static void compad_on_oob_event(uni_platform_oob_event_t event, void *data)
 {
     ARG_UNUSED(event);
@@ -376,7 +423,7 @@ struct uni_platform *get_compad_platform(void)
 {
     static struct uni_platform plat = {
         .name = "COMpad",
-        .init = compad_init,
+        .init = compad_platform_init,
         .on_init_complete = compad_on_init_complete,
         .on_device_discovered = compad_on_device_discovered,
         .on_device_connected = compad_on_device_connected,
@@ -384,7 +431,6 @@ struct uni_platform *get_compad_platform(void)
         .on_device_ready = compad_on_device_ready,
         .on_oob_event = compad_on_oob_event,
         .on_controller_data = compad_on_controller_data,
-        .get_property = compad_get_property,
     };
 
     return &plat;

@@ -50,6 +50,10 @@
  * 50 Hz, the rate the harness has sent at since phase 1. The two
  * intervals below are in ticks, and match harness/server.js exactly so
  * that the adapter and the development rig behave the same way.
+ *
+ * These three are the exception to this file: they are protocol policy
+ * from docs/protocol.md, not things a builder should change. The pins
+ * above are yours; these are the spec's.
  */
 #define COMPAD_TICK_MS 20
 #define COMPAD_DESCRIPTOR_EVERY 10 /* five times a second        */

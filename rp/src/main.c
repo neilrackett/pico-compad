@@ -46,6 +46,11 @@ int main(void)
      * that is the half a builder wants to prove first.
      */
     uart_init(COMPAD_UART, COMPAD_BAUD);
+
+    /* uart_init() already sets 8N1, the FIFO and no flow control. These
+     * three restate it deliberately: the protocol depends on 8N1 and
+     * the wire is the one thing here with no test behind it, so it is
+     * worth spelling out rather than inheriting an SDK default. */
     uart_set_format(COMPAD_UART, 8, 1, UART_PARITY_NONE);
     uart_set_hw_flow(COMPAD_UART, false, false);
     uart_set_fifo_enabled(COMPAD_UART, true);
