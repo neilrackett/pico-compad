@@ -9,6 +9,10 @@ exception is the wire: `make test-wire` pushes real frames through a
 real UART with TX shorted to RX, so throughput and latency have been
 measured on hardware even though nothing has been plugged into an ST.
 
+For the build itself, wire by wire and with the optional parts marked
+as optional, see [wiring.md](wiring.md). This file is the reference:
+pinouts, connectors and the reasoning.
+
 ## Pico side
 
 Pico W or Pico 2 W, with Bluepad32 over BTstack handling the Bluetooth

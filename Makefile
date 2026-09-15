@@ -7,7 +7,7 @@
 # says which one it belongs to.
 #
 #   make                 the same as test-host: fast, run it constantly
-#   make test-host       host tests only: decoder, mapping, harness socket
+#   make test-host       host tests only: decoder, encoder, mapping, socket
 #   make test-decode     compad.c's own assertions, run on the ST
 #   make test-serial     bytes cross the emulated link and frame up
 #   make test-provider   a resident provider publishes a pad, and another
@@ -17,6 +17,7 @@
 #   make test-wire       a real UART, loopback: the only physical test
 #   make test            all of the above, in order
 #   make simulator       drive it yourself, in a window
+#   make firmware        build the Pico W adapter firmware
 #   make tos             fetch EmuTOS into build/tos (the tests do this
 #                        for you; the target is for priming a machine
 #                        that is about to go offline)
@@ -48,8 +49,24 @@ BUILD = build
 test-host: | $(BUILD)
 	cc -Wall -Wextra -Werror -std=c11 test/protocol_test.c -o $(BUILD)/protocol_test
 	@$(BUILD)/protocol_test
+	@echo
+	cc -Wall -Wextra -Werror -std=c11 test/encode_test.c -o $(BUILD)/encode_test
+	@$(BUILD)/encode_test
 	@node test/xpadmap_test.js
 	@node test/server_test.js
+
+# The adapter firmware. Everything it needs is in lib/, so this wants
+# nothing installed but CMake and arm-none-eabi-gcc, and it never runs
+# as part of `test`: it is a cross build, not a check.
+.PHONY: firmware firmware-clean
+firmware:
+	@cmake -B rp/build -S rp
+	@cmake --build rp/build -j
+	@echo
+	@echo "flash rp/build/compad.uf2: hold BOOTSEL, plug in, copy it across"
+
+firmware-clean:
+	@rm -rf rp/build
 
 test-decode:
 	@test/run-decode.sh

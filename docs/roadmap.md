@@ -5,10 +5,16 @@
 
 Phases 0 to 2 pass under emulation, phase 2 in both halves: a simulated
 pad under `make test-gamepad`, and a real Bluetooth controller by hand
-through `harness/pad.html`. Phase 3 is the current one and is not
-started; 4 follows it. The wire itself has been measured on real
-hardware (`make test-wire`), but nothing has reached an ST. See
-AGENTS.md for what that means in practice.
+through `harness/pad.html`. The wire itself has been measured on real
+hardware (`make test-wire`).
+
+Phase 3 is the current one and is **written but unproven**. The adapter
+firmware builds (`make firmware`), its encoder is round tripped against
+the ST's own decoder on the host, and the pairing, LED and button
+behaviour below is implemented. But no Pico has been flashed, no adapter
+has been built, and nothing has reached an ST. Treat it as code that
+compiles and is tested where it can be, not as something known to work.
+See AGENTS.md for what that means in practice.
 
 Every phase here targets the Atari ST family. Other platforms are not
 on this roadmap at all: if one happens, it arrives as a new directory
@@ -172,7 +178,17 @@ look like bugs:
 
 Pico W or Pico 2 W, Bluepad32 over BTstack for the Bluetooth HID
 side. Wiring, connectors and the move onto a private MFP handler
-are in [hardware.md](hardware.md).
+are in [hardware.md](hardware.md), and the build itself is in
+[wiring.md](wiring.md).
+
+The firmware lives in `rp/`. `rp/src/encode.h` holds everything with
+logic worth getting wrong, free of both the Pico SDK and Bluepad32 so
+the host build tests it, and `test/encode_test.c` feeds every frame it
+can emit through the ST's own decoder so the two halves cannot drift
+apart. `rp/src/compad_platform.c` is the parts that need a Pico.
+
+**Exit criteria:** a controller paired to a real Pico W moves a bit in
+`XPADVIEW.TOS` on a real ST. None of that has happened yet.
 
 **Pairing has no pairing mode, deliberately.** Scan while a pad slot is
 empty, stop when they are full, and always allow incoming connections.

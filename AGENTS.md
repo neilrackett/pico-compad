@@ -30,16 +30,23 @@ why it stays clean even though only the ST uses it.
 
 xpad is a **submodule** (`lib/xpad`), not a vendored copy, so the two
 projects stay in sync while both evolve. Do not edit files under
-`lib/`; change them upstream and bump. The pin is xpad **v1.0.0**, its
-first tagged release: prefer bumping to a tag rather than to whatever
-`main` happens to hold, so a checkout of COMpad names the ABI version
-it was built against.
+`lib/`; change them upstream and bump. The pin is xpad **v1.1.0**:
+prefer bumping to a tag rather than to whatever `main` happens to hold,
+so a checkout of COMpad names the ABI version it was built against.
+
+The firmware mirrors a handful of constants from `lib/xpad/src/xpad.h`
+and from Bluepad32 into `rp/src/encode.h` rather than including either,
+which is what keeps that file host-testable. `test/encode_test.c`
+includes the real headers and asserts the copies still match, so the
+mirroring cannot rot quietly. Bump the submodule and run `make` before
+assuming a change there is harmless.
 
 ## Building and testing
 
 ```
 make                               same as test-host: fast, no toolchain
 make test-host                     host tests only, no emulator
+make firmware                      the Pico W adapter firmware
 STCMD_NO_TTY=1 stcmd make st       build the ST binaries
 make test-decode                   compad.c's own assertions, on the ST
 make test-serial                   the link: Node -> FIFO -> Hatari
@@ -68,6 +75,15 @@ The runners share `test/hatari.sh` the way they share `test/tos.sh`.
 Booting, the Hatari flag lore, the cleanup trap and the verdict polling
 live there, so each runner is only its own setup and assertions. Add a
 new one by copying the shortest, `run-decode.sh`.
+
+`make firmware` is a cross build and deliberately not part of `make
+test`, the same way `st` is not: it needs CMake and arm-none-eabi-gcc,
+and it proves compilation rather than behaviour. Everything about the
+firmware that can be tested without a Pico lives in `rp/src/encode.h`
+and is covered by `test/encode_test.c`, which round trips every frame
+the firmware can emit through the ST's own decoder. Put new firmware
+logic there rather than in `compad_platform.c` wherever there is a
+choice.
 
 The npm version and the `esm.sh` pin in `harness/pad.html` must match.
 They are the two halves of phase 2, one automated and one hands-on, and
@@ -109,6 +125,10 @@ sender outrun a slowed ST.
 
 ## Current status
 
+Phase 3's firmware is written but unproven: it builds, its encoder is
+round tripped against the ST decoder on the host, and no Pico has ever
+been flashed with it. Do not describe it as working.
+
 Phases 0 to 2 pass under emulation. Phase 0: the Node harness writes
 fixed state frames into a FIFO, Hatari presents them as RS-232, and
 PIPECHK.TOS decodes them under EmuTOS, values verified byte for byte.
@@ -124,7 +144,10 @@ gamepad through the real @mesmotronic/xpad library and asserts buttons,
 signed axes, analogue triggers, caps and pad type through the viewer.
 And a real Bluetooth controller has been driven through
 `harness/pad.html` into the viewer by hand, which is the half no
-automation can cover. Phases 3 and 4 are not started.
+automation can cover.
+
+Phase 3 exists in `rp/` and builds, but has never run: no Pico flashed,
+no adapter built. Phase 4, rumble, is not started.
 
 Still all under emulation, though: no gamepad has reached real ST
 hardware, because no adapter has been built. `make test-wire` is the

@@ -20,14 +20,22 @@ gamepad, or **a real Bluetooth controller** driven through
 reaches an `XPAD` block on the ST, and xpad's own viewer reads it back
 through the cookie jar with axes, triggers and pad type intact.
 
-The ST is still emulated, and no adapter has been built: see
-[docs/roadmap.md](docs/roadmap.md). Phase 3, the Pico firmware, is the
-current one. The wire itself has been measured on real hardware through
-`make test-wire`, which is the only thing here that has.
+Phase 3, the Pico W firmware, is now **written but unproven**. It builds
+with `make firmware`, and `test/encode_test.c` pushes every frame it can
+emit through the ST's own decoder on the host, so the two halves are
+known to agree. No Pico has been flashed and no adapter has been built,
+though, so nothing has reached a real ST: see
+[docs/roadmap.md](docs/roadmap.md). The wire itself has been measured on
+real hardware through `make test-wire`, which is still the only thing
+here that has.
+
+To build one, see [docs/wiring.md](docs/wiring.md). A MAX3232 is the
+only part you need; the status LED and the forget button are optional
+and need no build flag to leave out.
 
 ```
 make                 the default goal, same as test-host
-make test-host       host tests only: decoder, mapping, harness socket
+make test-host       host tests: decoder, encoder, mapping, harness socket
 make test-decode     compad.c's own assertions, run on the ST
 make test-serial     bytes cross the emulated link and frame up
 make test-provider   a resident provider publishes a pad, and another
@@ -37,6 +45,7 @@ make test-gamepad    a simulated controller: axes, triggers, pad type
 make test            all six, in order
 make test-wire       a real UART, loopback: needs hardware
 make simulator       drive it yourself, in a window
+make firmware        build the Pico W adapter firmware
 make tos             fetch or locate EmuTOS, and print where it landed
 make clean           both halves
 
@@ -66,12 +75,12 @@ bits move in `XPADVIEW.TOS`.
 
 | Path              | Contents                                                           |
 | ----------------- | ------------------------------------------------------------------ |
-| `rp/`             | Pico W firmware (Phase 3; placeholder until then)                  |
+| `rp/`             | Pico W adapter firmware: Bluepad32 in, COMpad frames out           |
 | `target/atarist/` | ST provider, the wire-protocol decoder, the test programs, and `XPADVIEW.TOS` built from the submodule |
 | `harness/`        | dev rig: frame writer, server, keyboard and gamepad pages, and `wire.js`, the loopback measurement |
 | `test/`           | host tests for the decoder, Hatari end-to-end runners              |
 | `docs/`           | protocol, hardware, roadmap, design notes                          |
-| `lib/`            | submodules: `xpad` at v1.0.0, plus `pico-sdk`, `pico-extras` and `bluepad32` |
+| `lib/`            | submodules: `xpad` at v1.1.0, plus `pico-sdk`, `pico-extras` and `bluepad32` |
 
 Two different things are called xpad, and it is worth keeping them
 apart. [atarist-xpad](https://github.com/neilrackett/atarist-xpad) is
@@ -85,6 +94,7 @@ the development harness and never by anything that ships.
 | Document                             | Contents                                                  |
 | ------------------------------------ | --------------------------------------------------------- |
 | [docs/protocol.md](docs/protocol.md) | the wire contract: frame types, layouts, timing budget    |
+| [docs/wiring.md](docs/wiring.md)     | how to build one: four wires minimum, extras marked optional |
 | [docs/hardware.md](docs/hardware.md) | building the adapter, connectors, which socket is the MFP |
 | [docs/roadmap.md](docs/roadmap.md)   | phases 0 to 4, what each one proves                       |
 | [docs/design.md](docs/design.md)     | why serial rather than MIDI, layering, constraints        |
