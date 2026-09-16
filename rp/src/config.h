@@ -67,6 +67,19 @@
 #define COMPAD_DESCRIPTOR_EVERY 10 /* five times a second        */
 #define COMPAD_KEEPALIVE_EVERY 12  /* about every 250 ms         */
 
+/*
+ * How often to re-ask whether anything is bonded, in ticks, and only
+ * while no pad is connected.
+ *
+ * Asking once at startup is not enough: the link key database is not
+ * reliably readable by the time on_init_complete runs, so the answer
+ * taken there can be a false negative and the LED then claims to be
+ * looking for a new pad when it is waiting for a known one. Measured on
+ * hardware, not reasoned about. Re-asking once a second costs a
+ * fiftieth of asking every tick and cannot get stuck on a stale no.
+ */
+#define COMPAD_BOND_RESCAN 50
+
 /* Blink periods in ticks. They only have to be obviously different
  * from each other, per docs/roadmap.md: plain on and off, no fade. */
 #define COMPAD_BLINK_FAST 5  /* 100 ms: looking for a new pad    */

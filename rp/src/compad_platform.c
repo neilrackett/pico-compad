@@ -16,6 +16,7 @@
  */
 
 #include <btstack_run_loop.h>
+#include <ble/le_device_db.h>
 #include <gap.h>
 #include <hardware/gpio.h>
 #include <hardware/uart.h>
@@ -46,8 +47,10 @@ typedef struct
 static COMPAD_SLOT slots[COMPAD_PADS];
 static btstack_timer_source_t tick_timer;
 
-/* Blink phase, and how long the button has been held. */
+/* Blink phase, ticks since the bond answer was last refreshed, and how
+ * long the button has been held. */
 static uint16_t blink;
+static uint16_t bond_age;
 static uint16_t held_ticks;
 
 /* ------------------------------------------------------------------ */
@@ -106,9 +109,18 @@ static void send_descriptor(uint8_t pad)
  * reads rather than a flash transaction, so this is tidiness rather
  * than a fire, but it is asked 50 times a second while idle.
  *
- * Refreshed at the three points that can change it, all of which the
- * file already had: startup, the forget button, and a disconnect, which
- * is when a newly bonded pad's key first matters to the LED.
+ * Both databases have to be asked, which is the whole of why this was
+ * wrong on hardware first time out. A controller bonds over Classic or
+ * over BLE depending on what it is, and the two keep their keys in
+ * different places: Classic in the link key database that
+ * gap_link_key_iterator walks, BLE in the LE device database. An Xbox
+ * Series pad bonds over BLE, so a Classic-only check reported no bonds
+ * while the pad was reconnecting on its own in front of us, and the LED
+ * claimed to be looking for a new pad for ever.
+ *
+ * Refreshed at the points that can change it, and then re-asked once a
+ * second while nothing is connected, so a cache can never get stuck on
+ * a stale no.
  */
 static bool bonds;
 
@@ -119,6 +131,9 @@ static bool scan_bonds(void)
     link_key_t key;
     link_key_type_t type;
     bool any = false;
+
+    if (le_device_db_count() > 0)
+        return true;
 
     if (!gap_link_key_iterator_init(&it))
         return false;
@@ -185,7 +200,14 @@ static void led_tick(void)
     {
         led_set(true);
         blink = 0;
+        bond_age = 0;
         return;
+    }
+
+    if (++bond_age >= COMPAD_BOND_RESCAN)
+    {
+        bond_age = 0;
+        refresh_bonds();
     }
 
     period = bonds ? COMPAD_BLINK_SLOW : COMPAD_BLINK_FAST;
