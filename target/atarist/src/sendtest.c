@@ -11,13 +11,24 @@
  * the adapter's USB console says what it received, and between them
  * they name the socket.
  *
- * It sends 0x55 deliberately: alternating bits, so it is legible on a
- * scope and any baud mismatch shows up as something other than 'U'.
+ * Each port sends its own byte, so the adapter's console names the
+ * socket rather than leaving you to correlate two screens by eye: 0x66
+ * for the MFP, 0x77 for SCC channel B, 0x99 for channel A, chosen to
+ * match the Bconmap device numbers. All three alternate bits enough to
+ * be legible on a scope, and a baud mismatch shows up as something
+ * other than the byte that was sent.
  *
  * Tries every Bconmap device in turn, because on a Mega STE the rear
  * panel labels are not a reliable guide to which chip is behind them.
  *
  *   SENDTEST.TOS         cycle through the ports until a key is pressed
+ *
+ * It counts what comes back as well as what it sends, which turns it
+ * into a loopback test for the ST itself. Short pins 2 and 3 on the
+ * ST's own socket, with nothing else attached, and a port that works
+ * should report roughly as many bytes received as sent. A port that
+ * sends but never receives has its receive path broken or disabled,
+ * and that is a fault in the machine rather than in any adapter.
  */
 
 #include <mint/osbind.h>
@@ -49,14 +60,15 @@ static long read_tos_version(void)
 
 static void blast(int dev, const char *name)
 {
-    long ticks, sent = 0;
+    long ticks, sent = 0, got = 0, wrong = 0;
+    uint8_t mark = (dev < 0) ? 0x55 : (uint8_t)((dev << 4) | dev);
 
     if (dev >= 0)
         Bconmap(dev);
 
     Rsconf(BAUD_19200, 0, UCR_8N1, -1, -1, -1);
 
-    printf("\r\ndevice %d, %-22s sending 0x55 ", dev, name);
+    printf("\r\ndevice %d, %-22s sending %02x ", dev, name, mark);
     fflush(stdout);
 
     for (ticks = 0; ticks < TICKS_PER_PORT; ticks++)
@@ -67,8 +79,18 @@ static void blast(int dev, const char *name)
          * this the way a blocking write would. */
         for (i = 0; i < BURST && Bcostat(1); i++)
         {
-            Bconout(1, 0x55);
+            Bconout(1, mark);
             sent++;
+        }
+
+        /* Anything coming back, whether from a loopback at the shell
+         * or from something on the other end that echoes. */
+        while (Bconstat(1))
+        {
+            if ((Bconin(1) & 0xff) == mark)
+                got++;
+            else
+                wrong++;
         }
 
         if ((ticks % 25) == 0)
@@ -80,7 +102,12 @@ static void blast(int dev, const char *name)
         Vsync();
     }
 
-    printf(" %ld bytes\r\n", sent);
+    printf(" sent %ld, back %ld", sent, got);
+
+    if (wrong)
+        printf(", %ld not 0x55", wrong);
+
+    printf("\r\n");
     fflush(stdout);
 }
 

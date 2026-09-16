@@ -128,8 +128,10 @@ real TOS version must be pointed at a real ROM.
 
 The xpad conventions apply here unchanged: run the host tests on every
 change, build with warnings fatal, and treat "compiles" as far short of
-"works". Only `make test-wire` has touched anything physical, and only
-a USB serial loopback: no part of this has reached an ST.
+"works". That last one earned its keep: the firmware compiled, passed
+every host test and round tripped against the ST's own decoder while
+being wired into the ST the wrong way round, and the emulator could not
+have told you. It runs on hardware now, which nothing here did before.
 
 The emulated targets must not run concurrently, and the Makefile is
 marked .NOTPARALLEL rather than relying on nobody passing -j. Not
@@ -140,9 +142,17 @@ sender outrun a slowed ST.
 
 ## Current status
 
-Phase 3's firmware is written but unproven: it builds, its encoder is
-round tripped against the ST decoder on the host, and no Pico has ever
-been flashed with it. Do not describe it as working.
+Phase 3 works on hardware: a Bluetooth controller through a Pico W and
+a MAX3232 into a Mega STE's Modem 1, read back by `XPADVIEW.TOS`.
+
+Three things cost an evening of bring-up and are worth knowing before
+debugging anything similar. The adapter sends nothing at all when no pad
+is connected, so an idle adapter and an absent one are indistinguishable
+from the ST. The Mega STE's MFP port is **Modem 1**, not Serial 2 as
+hardware.md used to claim. And a MAX3232 module may name its TTL pins
+for the device you attach rather than for itself, in which case `TXD`
+takes the Pico's transmit; wired the other way the link still works
+inbound, which looks like a broken wire rather than a swapped pair.
 
 Phases 0 to 2 pass under emulation. Phase 0: the Node harness writes
 fixed state frames into a FIFO, Hatari presents them as RS-232, and

@@ -20,14 +20,11 @@ gamepad, or **a real Bluetooth controller** driven through
 reaches an `XPAD` block on the ST, and xpad's own viewer reads it back
 through the cookie jar with axes, triggers and pad type intact.
 
-Phase 3, the Pico W firmware, is now **written but unproven**. It builds
-with `make firmware`, and `test/encode_test.c` pushes every frame it can
-emit through the ST's own decoder on the host, so the two halves are
-known to agree. No Pico has been flashed and no adapter has been built,
-though, so nothing has reached a real ST: see
-[docs/roadmap.md](docs/roadmap.md). The wire itself has been measured on
-real hardware through `make test-wire`, which is still the only thing
-here that has.
+**Phase 3 works on real hardware.** A Bluetooth controller paired to a
+Pico W, through a MAX3232 into a Mega STE's Modem 1, reaches an `XPAD`
+block that `XPADVIEW.TOS` reads back with buttons, sticks and triggers
+intact. Phase 4, rumble, is next: see
+[docs/roadmap.md](docs/roadmap.md).
 
 To build one, see [docs/wiring.md](docs/wiring.md). A MAX3232 is the
 only part you need; the status LED and the forget button are optional

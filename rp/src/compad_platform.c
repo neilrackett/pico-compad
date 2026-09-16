@@ -47,6 +47,13 @@ typedef struct
 static COMPAD_SLOT slots[COMPAD_PADS];
 static btstack_timer_source_t tick_timer;
 
+/* Bytes seen on the wire's receive side, and when they were last
+ * reported. Nothing consumes them yet: request frames are phase 4. */
+static uint32_t rx_bytes;
+static uint8_t rx_last[8];
+static uint8_t rx_have;
+static uint16_t rx_age;
+
 /* Blink phase, ticks since the bond answer was last refreshed, and how
  * long the button has been held. */
 static uint16_t blink;
@@ -249,6 +256,53 @@ static void button_tick(void)
     }
 }
 
+/*
+ * Say what arrives on GP1.
+ *
+ * Bring-up, and the answer to a question the ST cannot answer for
+ * itself: when nothing reaches the ST, it is impossible to tell a bad
+ * wire from a wrong socket from a machine that never transmitted. Run
+ * SENDTEST.TOS on the ST and watch this console, and the question
+ * becomes which port the bytes came from.
+ *
+ * It also proves the receive half of the link, which nothing has ever
+ * exercised: the UART is configured for it and until now not one byte
+ * has been read. Draining it is the first piece of phase 4's request
+ * path, so this is groundwork rather than scaffolding.
+ */
+static void rx_tick(void)
+{
+    while (uart_is_readable(COMPAD_UART))
+    {
+        uint8_t b = uart_getc(COMPAD_UART);
+
+        rx_bytes++;
+
+        if (rx_have < sizeof(rx_last))
+            rx_last[rx_have++] = b;
+    }
+
+    /* Once a second, and only when there is something to say, so a
+     * quiet link does not fill the console. */
+    if (++rx_age < (1000 / COMPAD_TICK_MS))
+        return;
+
+    rx_age = 0;
+
+    if (rx_have)
+    {
+        unsigned i;
+
+        logi("compad: rx %lu bytes, first:", (unsigned long)rx_bytes);
+
+        for (i = 0; i < rx_have; i++)
+            logi(" %02x", rx_last[i]);
+
+        logi("\n");
+        rx_have = 0;
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* The tick                                                            */
 /* ------------------------------------------------------------------ */
@@ -296,6 +350,7 @@ static void tick(btstack_timer_source_t *ts)
 
     led_tick();
     button_tick();
+    rx_tick();
 }
 
 /* ------------------------------------------------------------------ */

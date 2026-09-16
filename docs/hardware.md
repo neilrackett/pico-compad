@@ -3,11 +3,9 @@
 
 # Hardware
 
-Building the adapter, and which socket to plug it into. No adapter has
-been built yet, and the ST side runs only under emulation. The one
-exception is the wire: `make test-wire` pushes real frames through a
-real UART with TX shorted to RX, so throughput and latency have been
-measured on hardware even though nothing has been plugged into an ST.
+Building the adapter, and which socket to plug it into. One has now
+been built and works: a Pico W and a MAX3232 module into a Mega STE's
+Modem 1, carrying a Bluetooth controller into an `XPAD` block.
 
 For the build itself, wire by wire and with the optional parts marked
 as optional, see [wiring.md](wiring.md). This file is the reference:
@@ -99,10 +97,18 @@ touches neither, but a future flow-control phase would.
 **Machine notes:** ST and STE have a single DB25 modem port, wired to
 the MFP 68901.
 
-On the Mega STE the equivalent is **Serial 2**, the 9-pin male D
-connector on the rear panel below the VME slot. It is the same MFP at
-`$FFFA00`, so it is register and interrupt compatible with ST/STE code
-and needs no changes: only the connector shell differs.
+On the Mega STE the equivalent is **Modem 1**, measured on hardware:
+`SENDTEST.TOS` transmits a different byte on each Bconmap device and the
+adapter reports which arrived, and Modem 1 produces the MFP's. It is the
+same MFP at `$FFFA00`, so it is register and interrupt compatible with
+ST/STE code and needs no changes: only the connector shell differs.
+
+This file previously said Serial 2, the socket below the VME slot, and
+said so confidently enough to send somebody to a port that transmits
+but never receives, which is what an SCC channel does when `Rsconf`
+half configures it. The claim had never been checked on a machine. Note
+also that on at least one Mega STE the Serial 2 lead to the blanking
+plate is not connected inside the case at all.
 
 The machine's other two serial ports are Mega STE additions driven by
 the SCC 85C30 rather than the MFP, and neither is usable by this code
@@ -111,9 +117,14 @@ channel A.
 
 | Port | Chip | Bconmap device |
 |------|------|----------------|
-| Serial 2 (below the VME slot) | MFP 68901 | 6, the boot default |
-| Serial 1 | SCC channel B | 7 |
+| Modem 1 | MFP 68901 | 6, the boot default |
+| Modem 2 | SCC channel B | 7 |
 | LAN | SCC channel A | 9 |
+
+Run `SENDTEST.TOS` rather than trusting that table: rear panel labels
+vary between machines and between sources, it sends a byte matching the
+device number on each in turn, and whichever one reaches the adapter is
+the one to use.
 
 Device 6 is the default at boot, so `Bconin`/`Bconout` on device 1
 (AUX) reach the MFP unless something has remapped the BIOS. Since
@@ -124,9 +135,8 @@ it if the mapping had moved. Below TOS 2.00 it skips the call: Bconmap
 arrived with the machines that have more than one serial port, and
 anything older has only the MFP to offer anyway.
 
-Beware one piece of misinformation while working on this: Hatari's own
-manual lists the Mega STE's MFP port as a DB25 named "Modem 1". The
-hardware says otherwise.
+Hatari's manual calls the Mega STE's MFP port "Modem 1", and the
+hardware agrees: this file used to claim otherwise and was wrong.
 
 ## Driving the port from the ST
 

@@ -8,13 +8,13 @@ pad under `make test-gamepad`, and a real Bluetooth controller by hand
 through `harness/pad.html`. The wire itself has been measured on real
 hardware (`make test-wire`).
 
-Phase 3 is the current one and is **written but unproven**. The adapter
-firmware builds (`make firmware`), its encoder is round tripped against
-the ST's own decoder on the host, and the pairing, LED and button
-behaviour below is implemented. But no Pico has been flashed, no adapter
-has been built, and nothing has reached an ST. Treat it as code that
-compiles and is tested where it can be, not as something known to work.
-See AGENTS.md for what that means in practice.
+**Phase 3 is done, on hardware.** A Bluetooth controller paired to a
+Pico W reaches an `XPAD` block on a real Mega STE over a real wire, and
+`XPADVIEW.TOS` shows it moving. That is the exit criteria met, and it is
+the first thing in this project to have run anywhere but an emulator.
+
+Phase 4, rumble, is next and needs the request frame direction, which
+nothing implements yet.
 
 Every phase here targets the Atari ST family. Other platforms are not
 on this roadmap at all: if one happens, it arrives as a new directory
@@ -187,8 +187,16 @@ the host build tests it, and `test/encode_test.c` feeds every frame it
 can emit through the ST's own decoder so the two halves cannot drift
 apart. `rp/src/compad_platform.c` is the parts that need a Pico.
 
-**Exit criteria:** a controller paired to a real Pico W moves a bit in
-`XPADVIEW.TOS` on a real ST. None of that has happened yet.
+**Exit criteria: met.** A controller paired to a real Pico W moves a bit
+in `XPADVIEW.TOS` on a real Mega STE, through a MAX3232 into Modem 1.
+
+What the bring-up actually cost, since none of it was the code: the
+adapter is silent with no pad connected, so an idle adapter and an
+absent one look identical; the Mega STE's MFP port is Modem 1, not
+Serial 2 as hardware.md claimed; and the MAX3232 module names its TTL
+pins for the device you attach rather than for itself, so `TXD` takes
+the Pico's transmit. That last one is the nastiest, because the wrong
+way round still works in one direction and reads like a broken wire.
 
 **Pairing has no pairing mode, deliberately.** Scan while a pad slot is
 empty, stop when they are full, and always allow incoming connections.

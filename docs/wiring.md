@@ -24,18 +24,18 @@ from the end furthest from the DE-9.
    │              │               │                │
    │          VCC ├───────────────┤ 3V3   (pin 36) │
    │              │               │                │
-   │          RXD │◄──────────────┤ GP0   (pin 1)  │   UART0 TX
+   │          RXD ├──────────────►│ GP1   (pin 2)  │   UART0 RX
    │ DE-9         │               │                │
-   │ female   TXD ├──────────────►│ GP1   (pin 2)  │   UART0 RX
+   │ female   TXD │◄──────────────┤ GP0   (pin 1)  │   UART0 TX
    │              │               │                │
    │          GND ├───────────────┤ GND   (pin 38) │
    │              │               │                │
    └──────┬───────┘               └────────────────┘
           │                         USB for power
-          │ cable                   and the console
+          │ plugs straight in       and the console
    ┌──────┴──────┐
-   │  Serial 2   │   Mega STE, below the VME slot
-   │  or DB25    │   ST/STE, the modem port
+   │  Modem 1    │   Mega STE: the MFP port, measured
+   │  or the     │   ST/STE: the DB25 modem port
    │  modem port │
    └─────────────┘
 ```
@@ -43,15 +43,19 @@ from the end furthest from the DE-9.
 `GP0` is UART0 TX and `GP1` is UART0 RX, which is what `rp/src/config.h`
 sets and what the firmware brings up before Bluetooth.
 
-**Note the crossover: transmit meets receive.** The module's labels are
-from its own point of view, as they are on a USB-to-TTL cable, so its
-`RXD` is an input wanting the Pico's transmit and its `TXD` is an output
-feeding the Pico's receive. Wiring `TXD` to `GP0` puts two outputs on
-one wire and nothing works.
+**`RXD` to `GP1` and `TXD` to `GP0`, which is not a crossover.** This
+module names its pins for the device you attach: `TXD` is the pin you
+feed from your MCU's transmit, `RXD` is the pin that feeds your MCU's
+receive. A USB-to-TTL cable usually names them the other way, for
+itself, and getting this backwards cost an entire evening: the module
+still receives what the ST sends, because that path is separate, so the
+link works perfectly in one direction and is silent in the other, which
+reads like a broken wire rather than a swapped pair.
 
-Makers do differ about this, so if nothing arrives, swap the two at the
-module header. Both ends are 3.3V CMOS, so getting it wrong costs
-nothing but a minute.
+**So if one direction works and the other does not, swap these two
+before suspecting anything else.** Both ends are 3.3V CMOS, so it costs
+nothing but a minute, and `SENDTEST.TOS` will tell you when it is right:
+with the two swapped you get bytes sent and none back.
 
 Check the chip is a MAX**3232** and not a MAX232. The MAX232 wants 5V
 and will not work from the Pico's 3V3 rail.
