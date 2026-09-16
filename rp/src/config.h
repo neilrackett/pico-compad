@@ -19,10 +19,18 @@
 #define COMPAD_UART_TX 0
 #define COMPAD_UART_RX 1
 
-/* 9600 because that is what the ST provider sets with Rsconf, and what
- * every test so far has used. docs/protocol.md explains why the faster
- * rates wait on getting off the TOS serial path. */
-#define COMPAD_BAUD 9600
+/*
+ * 19200, which is the fastest Rsconf offers: its table counts down from
+ * the fastest, so the ST provider asks for speed code 0. One pad at
+ * 50 Hz is 31% of this link against 63% of a 9600 one.
+ *
+ * Both ends must agree. If a marginal cable makes the link flaky, drop
+ * this to 9600 and BAUD_19200 to 1 in target/atarist/src/compad.c.
+ *
+ * 38400 is the next step up and needs more than a constant: it is not
+ * in Rsconf's table, so it waits on the private MFP handler.
+ */
+#define COMPAD_BAUD 19200
 
 /*
  * Optional, and absent by construction rather than by #ifdef.

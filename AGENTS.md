@@ -52,6 +52,7 @@ three include paths. Keep them in step.
 make                               same as test-host: fast, no toolchain
 make test-host                     host tests only, no emulator
 make firmware                      the Pico W adapter firmware
+make dist                          what you flash or install, in dist/
 STCMD_NO_TTY=1 stcmd make st       build the ST binaries
 make test-decode                   compad.c's own assertions, on the ST
 make test-serial                   the link: Node -> FIFO -> Hatari
@@ -80,6 +81,15 @@ The runners share `test/hatari.sh` the way they share `test/tos.sh`.
 Booting, the Hatari flag lore, the cleanup trap and the verdict polling
 live there, so each runner is only its own setup and assertions. Add a
 new one by copying the shortest, `run-decode.sh`.
+
+`make dist` gathers the three things that go onto hardware: the UF2,
+`COMPAD.PRG` for the ST's AUTO folder, and `XPADVIEW.TOS` to watch the
+result. It copies rather than builds, because the two halves need
+toolchains that must not run in the same place, and a missing file
+names the command that makes it. Only those three: the other four ST
+binaries are test programs Hatari drives, and shipping them next to the
+ones you copy onto a real machine invites running CPDTEST.TOS on
+hardware and wondering why nothing happens.
 
 `make firmware` is a cross build and deliberately not part of `make
 test`, the same way `st` is not: it needs CMake and arm-none-eabi-gcc,

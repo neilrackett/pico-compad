@@ -18,7 +18,7 @@
 
 #include "protocol.h"
 
-#define BAUD_9600 1 /* Rsconf speed code */
+#define BAUD_19200 0 /* Rsconf speed code, 0 is its fastest */
 #define UCR_8N1 0x88
 
 #define TIMEOUT_TICKS 750 /* ~15 s of Vsync at 50 Hz */
@@ -32,10 +32,10 @@ int main(void)
     long frames = 0;
     long ticks;
 
-    Rsconf(BAUD_9600, 0, UCR_8N1, -1, -1, -1);
+    Rsconf(BAUD_19200, 0, UCR_8N1, -1, -1, -1);
     compad_init(&d);
 
-    printf("COMpad pipe check: AUX at 9600 8N1\r\n");
+    printf("COMpad pipe check: AUX at 19200 8N1\r\n");
 
     for (ticks = 0; ticks < TIMEOUT_TICKS && frames < ENOUGH_FRAMES; ticks++)
     {

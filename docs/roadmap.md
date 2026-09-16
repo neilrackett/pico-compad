@@ -26,7 +26,7 @@ Before any interesting code exists.
 
 - Node writes one fixed dummy state frame on a loop into a FIFO.
 - Hatari reads it: `--rs232-in <fifo>`.
-- ST-side throwaway program uses TOS `Rsconf` at 9600 and prints raw
+- ST-side throwaway program uses TOS `Rsconf` at 19200 and prints raw
   bytes.
 
 If those bytes appear, wiring of the emulated path, baud and framing are
@@ -81,7 +81,7 @@ downstream is lied to.
 
 - Frame decoder in its own file with no TOS headers, so it can be unit
   tested on the host. This is where the logic worth getting wrong lives.
-- `Rsconf` at 9600 for bring-up, handshake mode 0.
+- `Rsconf` at 19200, its fastest, handshake mode 0.
 - Publish as `"COMpad 0.1"`.
 - Verify with `xpadview` before anything else consumes it.
 

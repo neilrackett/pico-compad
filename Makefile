@@ -18,6 +18,7 @@
 #   make test            all of the above, in order
 #   make simulator       drive it yourself, in a window
 #   make firmware        build the Pico W adapter firmware
+#   make dist            collect what you flash or install into dist/
 #   make tos             fetch EmuTOS into build/tos (the tests do this
 #                        for you; the target is for priming a machine
 #                        that is about to go offline)
@@ -37,7 +38,7 @@ BUILD = build
 .DEFAULT_GOAL := test-host
 
 .PHONY: test test-host test-decode test-serial test-provider \
-        test-live test-gamepad test-wire simulator tos st firmware clean
+        test-live test-gamepad test-wire simulator tos st firmware dist clean
 
 # Not because of a shared port: no test target binds one, and each makes
 # its own temporary FIFO. Because none of them fast-forward. Every
@@ -61,6 +62,42 @@ test-host: | $(BUILD)
 FW_INC = -I lib/xpad/src \
          -I lib/bluepad32/src/components/bluepad32/include \
          -I target/atarist/src
+
+# Everything you flash or install, in one place.
+#
+# Deliberately only the three: the other four ST binaries in
+# target/atarist/build are test programs that Hatari drives, and putting
+# them next to the two you copy onto a real machine is how somebody ends
+# up running CPDTEST.TOS on hardware and wondering why nothing happens.
+#
+# This copies rather than builds, because the two halves need different
+# toolchains that must not run in the same place: the firmware wants
+# CMake and arm-none-eabi-gcc on the host, the ST side wants the
+# container. A missing file names the command that makes it.
+DIST = dist
+
+# No order-only prerequisite on the directory: it would share its name
+# with this target and make would call that circular.
+dist:
+	@mkdir -p $(DIST)
+	@missing=0; \
+	for f in rp/build/compad.uf2:"make firmware" \
+	         target/atarist/build/COMPAD.PRG:"STCMD_NO_TTY=1 stcmd make st" \
+	         target/atarist/build/XPADVIEW.TOS:"STCMD_NO_TTY=1 stcmd make st"; do \
+		src=$${f%%:*}; how=$${f#*:}; \
+		if [ -f "$$src" ]; then \
+			cp "$$src" $(DIST)/; \
+		else \
+			echo "missing $$src, build it with: $$how"; \
+			missing=1; \
+		fi; \
+	done; \
+	[ $$missing -eq 0 ] || exit 1
+	@echo
+	@echo "$(DIST)/compad.uf2      flash: hold BOOTSEL, plug in, copy it across"
+	@echo "$(DIST)/COMPAD.PRG      install: into the ST's AUTO folder"
+	@echo "$(DIST)/XPADVIEW.TOS    run it to watch the pad"
+
 
 # The adapter firmware. Everything it needs is in lib/, so this wants
 # nothing installed but CMake and arm-none-eabi-gcc, and it never runs
@@ -113,5 +150,5 @@ $(BUILD):
 	@mkdir -p $(BUILD)
 
 clean:
-	rm -rf $(BUILD) rp/build
+	rm -rf $(BUILD) $(DIST) rp/build
 	$(MAKE) -C target/atarist clean

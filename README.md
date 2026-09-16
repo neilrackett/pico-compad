@@ -46,6 +46,7 @@ make test            all six, in order
 make test-wire       a real UART, loopback: needs hardware
 make simulator       drive it yourself, in a window
 make firmware        build the Pico W adapter firmware
+make dist            collect what you flash or install into dist/
 make tos             fetch or locate EmuTOS, and print where it landed
 make clean           both halves
 
@@ -80,6 +81,7 @@ bits move in `XPADVIEW.TOS`.
 | `harness/`        | dev rig: frame writer, server, keyboard and gamepad pages, and `wire.js`, the loopback measurement |
 | `test/`           | host tests for the decoder, Hatari end-to-end runners              |
 | `docs/`           | protocol, hardware, roadmap, design notes                          |
+| `dist/`           | `make dist` output: the UF2 to flash and the two ST programs       |
 | `lib/`            | submodules: `xpad` at v1.1.0, plus `pico-sdk`, `pico-extras` and `bluepad32` |
 
 Two different things are called xpad, and it is worth keeping them

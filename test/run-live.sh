@@ -35,7 +35,7 @@ node harness/server.js "$FIFO" --cycle &
 hatari_own $!
 hatari_boot LIVECHK.TOS
 
-hatari_wait "LIVE-DONE" 90
+hatari_wait "LIVE-DONE [0-9]" 90
 
 hatari_expect "LIVE-DONE 0" "the published value followed the sender"
 hatari_verdict "the provider follows a changing sender" "live updates FAILED"

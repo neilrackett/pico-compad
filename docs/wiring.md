@@ -48,6 +48,16 @@ DE-9 female connector. The pinout is in
 [hardware.md](hardware.md#wiring); the module simply has all of that
 fitted already.
 
+## What to put where
+
+`make dist` collects the three things that go onto hardware:
+
+| File | Goes |
+| ---- | ---- |
+| `dist/compad.uf2` | the Pico: hold BOOTSEL, plug in, copy it across |
+| `dist/COMPAD.PRG` | the ST's `AUTO` folder |
+| `dist/XPADVIEW.TOS` | anywhere on the ST; run it to watch the pad |
+
 ## Optional extras
 
 Neither is needed to build, flash or use the adapter, and neither needs

@@ -25,8 +25,8 @@
  *   - caps and pad types arrive from descriptor frames when the
  *     adapter sends them; until then a pad that has produced a state
  *     frame reports XPAD_TYPE_GAMEPAD
- *   - Rsconf at 9600; the private MFP handler and higher rates are
- *     phase 3
+ *   - Rsconf at 19200, which is its fastest. 38400 needs a private MFP
+ *     handler, because it is not in Rsconf's table at all
  *   - the MFP port only. The Mega STE's two SCC ports are a different
  *     chip with different initialisation, and nothing here drives them
  */
@@ -41,7 +41,10 @@
 
 #define PROVIDER "COMpad 0.1"
 
-#define BAUD_9600 1
+/* Rsconf's table counts down from the fastest, so 0 is 19200 and 1 is
+ * 9600. Drop back to 1 if a marginal cable makes the link flaky: both
+ * ends must agree, so change rp/src/config.h with it. */
+#define BAUD_19200 0
 #define UCR_8N1 0x88
 
 /*
@@ -370,7 +373,7 @@ static int install(void)
     init_block();
 
     claim_mfp();
-    Rsconf(BAUD_9600, 0, UCR_8N1, -1, -1, -1);
+    Rsconf(BAUD_19200, 0, UCR_8N1, -1, -1, -1);
     aux = (_IOREC *)Iorec(0);
 
     if (!aux)

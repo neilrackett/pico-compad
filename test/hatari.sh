@@ -108,6 +108,15 @@ hatari_boot()
 }
 
 # Wait for a program to print its verdict token, or give up.
+# Wait for a marker to appear in the log.
+#
+# Pass the WHOLE line you are about to assert on, not its prefix. The
+# ST prints its verdict as "MARKER <status>" and the emulated console
+# flushes in pieces, so waiting for "MARKER" alone can return between
+# the marker and its status digit. The caller then tears Hatari down and
+# greps a log that will never gain the rest of the line: a run that
+# passed, reported as a failure. It took two suite runs under load to
+# show up, and none in isolation.
 hatari_wait()
 {
     local marker=$1 timeout=${2:-90} i
