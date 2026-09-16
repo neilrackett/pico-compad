@@ -65,9 +65,12 @@ FW_INC = -I lib/xpad/src \
 
 # Everything you flash or install, in one place.
 #
-# Deliberately only the three: the other four ST binaries in
-# target/atarist/build are test programs that Hatari drives, and putting
-# them next to the two you copy onto a real machine is how somebody ends
+# Four, not seven. PIPECHK.TOS is a Hatari test program and also the
+# right first thing to run on real hardware: it prints raw hex of
+# whatever reaches AUX, so bytes appearing at all prove the orientation,
+# the level shifter and the baud before framing enters into it. The
+# other three ST binaries are only ever driven by Hatari, and shipping
+# them beside the ones you copy onto a real machine is how somebody ends
 # up running CPDTEST.TOS on hardware and wondering why nothing happens.
 #
 # This copies rather than builds, because the two halves need different
@@ -83,7 +86,9 @@ dist:
 	@missing=0; \
 	for f in rp/build/compad.uf2:"make firmware" \
 	         target/atarist/build/COMPAD.PRG:"STCMD_NO_TTY=1 stcmd make st" \
-	         target/atarist/build/XPADVIEW.TOS:"STCMD_NO_TTY=1 stcmd make st"; do \
+	         target/atarist/build/XPADVIEW.TOS:"STCMD_NO_TTY=1 stcmd make st" \
+	         target/atarist/build/PIPECHK.TOS:"STCMD_NO_TTY=1 stcmd make st" \
+	         target/atarist/build/SENDTEST.TOS:"STCMD_NO_TTY=1 stcmd make st"; do \
 		src=$${f%%:*}; how=$${f#*:}; \
 		if [ -f "$$src" ]; then \
 			cp "$$src" $(DIST)/; \
@@ -97,6 +102,8 @@ dist:
 	@echo "$(DIST)/compad.uf2      flash: hold BOOTSEL, plug in, copy it across"
 	@echo "$(DIST)/COMPAD.PRG      install: into the ST's AUTO folder"
 	@echo "$(DIST)/XPADVIEW.TOS    run it to watch the pad"
+	@echo "$(DIST)/PIPECHK.TOS     run it first: prints raw bytes off the wire"
+	@echo "$(DIST)/SENDTEST.TOS    the other direction: the ST transmitting"
 
 
 # The adapter firmware. Everything it needs is in lib/, so this wants

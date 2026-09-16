@@ -15,9 +15,15 @@ XPADSRC  = $(XPAD)/xpad.c $(XPAD)/xpad_provider.c
 COMPADSRC = src/compad.c src/etv.s $(XPADSRC)
 COMPADDEP = $(COMPADSRC) src/protocol.h $(XPAD)/xpad.h
 
-all: $(BUILD)/PIPECHK.TOS $(BUILD)/COMPAD.PRG $(BUILD)/CPDTEST.TOS \
+all: $(BUILD)/PIPECHK.TOS $(BUILD)/SENDTEST.TOS \
+     $(BUILD)/COMPAD.PRG $(BUILD)/CPDTEST.TOS \
      $(BUILD)/VIEWTEST.TOS $(BUILD)/XPADVIEW.TOS $(BUILD)/LIVECHK.TOS \
      $(BUILD)/KEYECHO.TOS
+
+# Bring-up only: the ST transmitting, which is the direction that is
+# easy to read because the adapter's console can report what arrived.
+$(BUILD)/SENDTEST.TOS: src/sendtest.c | $(BUILD)
+	$(CC) $(CFLAGS) src/sendtest.c -o $@
 
 $(BUILD)/PIPECHK.TOS: src/pipechk.c src/protocol.h | $(BUILD)
 	$(CC) $(CFLAGS) src/pipechk.c -o $@

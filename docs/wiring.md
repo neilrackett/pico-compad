@@ -12,31 +12,46 @@ Read the warnings at the end before powering anything.
 ## Minimum build
 
 Four wires, if you have a MAX3232 module with the DE-9 already on it.
+Modules differ in the order they put the pins, so go by the labels
+rather than by position: the one drawn here reads VCC, RXD, TXD, GND
+from the end furthest from the DE-9.
 
 ```
-        Pico W                     MAX3232 module              Atari ST
-   ┌────────────────┐            ┌──────────────┐
-   │                │            │              │
-   │  GP0  (pin 1) ─┼────────────┤ TXD          │         ┌───────────┐
-   │                │            │         DE-9 ├─────────┤ Serial 2  │
-   │  GP1  (pin 2) ─┼────────────┤ RXD   female │  cable  │  (Mega    │
-   │                │            │              │         │   STE)    │
-   │  GND  (pin 38)─┼────────────┤ GND          │         └───────────┘
-   │                │            │              │          or the DB25
-   │  3V3  (pin 36)─┼────────────┤ VCC          │          modem port
-   │                │            │              │          on an ST/STE
-   └────────────────┘            └──────────────┘
-        USB for power
-        and the console
+     MAX3232 module                     Pico W
+   (pins as labelled,
+    DE-9 to the left)
+   ┌──────────────┐               ┌────────────────┐
+   │              │               │                │
+   │          VCC ├───────────────┤ 3V3   (pin 36) │
+   │              │               │                │
+   │          RXD │◄──────────────┤ GP0   (pin 1)  │   UART0 TX
+   │ DE-9         │               │                │
+   │ female   TXD ├──────────────►│ GP1   (pin 2)  │   UART0 RX
+   │              │               │                │
+   │          GND ├───────────────┤ GND   (pin 38) │
+   │              │               │                │
+   └──────┬───────┘               └────────────────┘
+          │                         USB for power
+          │ cable                   and the console
+   ┌──────┴──────┐
+   │  Serial 2   │   Mega STE, below the VME slot
+   │  or DB25    │   ST/STE, the modem port
+   │  modem port │
+   └─────────────┘
 ```
 
 `GP0` is UART0 TX and `GP1` is UART0 RX, which is what `rp/src/config.h`
 sets and what the firmware brings up before Bluetooth.
 
-**The module's own labels are from its point of view, and makers differ
-about that.** If nothing arrives, swap `TXD` and `RXD` at the module
-header and try again. Both ends are 3.3V CMOS there, so getting it wrong
-costs nothing.
+**Note the crossover: transmit meets receive.** The module's labels are
+from its own point of view, as they are on a USB-to-TTL cable, so its
+`RXD` is an input wanting the Pico's transmit and its `TXD` is an output
+feeding the Pico's receive. Wiring `TXD` to `GP0` puts two outputs on
+one wire and nothing works.
+
+Makers do differ about this, so if nothing arrives, swap the two at the
+module header. Both ends are 3.3V CMOS, so getting it wrong costs
+nothing but a minute.
 
 Check the chip is a MAX**3232** and not a MAX232. The MAX232 wants 5V
 and will not work from the Pico's 3V3 rail.
@@ -50,13 +65,14 @@ fitted already.
 
 ## What to put where
 
-`make dist` collects the three things that go onto hardware:
+`make dist` collects the four things that go onto hardware:
 
 | File | Goes |
 | ---- | ---- |
 | `dist/compad.uf2` | the Pico: hold BOOTSEL, plug in, copy it across |
 | `dist/COMPAD.PRG` | the ST's `AUTO` folder |
 | `dist/XPADVIEW.TOS` | anywhere on the ST; run it to watch the pad |
+| `dist/PIPECHK.TOS` | anywhere on the ST; run it first, it prints raw bytes |
 
 ## Optional extras
 
@@ -78,6 +94,7 @@ with a pull-up reads as "not pressed" for ever.
    │                │            ╰─────╯   │
    │  GND  (pin 18)─┼──────────────────────┘   no resistor: the pin
    │                │                          uses its internal pull-up
+   │                │                          4 pins? use DIAGONAL ones
    └────────────────┘
 ```
 
@@ -95,7 +112,13 @@ succeeded, so a dead radio looks exactly like a dead board.
 | Solid | A pad is connected |
 | Solid, straight from power-on, onboard LED dark | The radio failed to start |
 
-**Button.** Held for two seconds, it forgets every paired controller.
+**Button.** A 6x6mm tactile switch has four legs that are two pairs,
+each pair joined inside the switch, so wire two **diagonally opposite**
+legs: any other choice risks picking a joined pair, which is a permanent
+short and reads as the button held down for ever, wiping your bonds two
+seconds after every power-on.
+
+Held for two seconds, it forgets every paired controller.
 That is all it does: pairing itself needs no button, because the adapter
 scans whenever a slot is free and a known pad reconnects on its own. See
 [roadmap.md](roadmap.md) for why it works that way. Without the button
@@ -124,11 +147,19 @@ to DB25 adapter, since the shell is the only physical difference.
   RxD; on DB25 it is pin 3. Miswiring that is the classic way to get a
   silent link with nothing to see on either end.
 - **The module may be wired as DTE rather than DCE**, in which case its
-  transmit lands on the ST's transmit and nothing works. Power the
-  module, leave its TTL `TXD` idle, and measure DE-9 pins 2 and 3
-  against pin 5: whichever sits at a solid negative voltage is the
-  module's output. It should be **pin 2**. If it is pin 3, you need a
-  null modem adapter or to cross 2 and 3.
+  transmit lands on the ST's transmit and nothing works. With a meter:
+  power the module, leave its TTL `TXD` idle, and measure DE-9 pins 2
+  and 3 against pin 5. Whichever sits at a solid negative voltage is
+  the module's output, and it should be **pin 2**.
+
+  Without a meter, just try it. **Getting this wrong cannot damage
+  anything**: RS-232 line drivers are short-circuit protected by design,
+  the MAX3232 explicitly so, and transmit meeting transmit gives you
+  silence rather than smoke. Start straight through, since a module with
+  a female DE-9 is built to plug into a PC's male COM port and so is
+  almost certainly DCE already, then run `PIPECHK.TOS` on the ST. Raw
+  bytes appearing at all means the orientation, the level shifter and
+  the baud are right. Nothing at all, and you cross pins 2 and 3.
 
 ## Proving it without an ST
 
