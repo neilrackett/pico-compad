@@ -5,7 +5,12 @@
 #   STCMD_NO_TTY=1 stcmd make        (from this directory or via root)
 
 CC     = m68k-atari-mint-gcc
-CFLAGS = -Wall -Wextra -Werror -O2 -fomit-frame-pointer -m68000
+# Passed in from the repo root, which reads version.txt. Defaulted the
+# way md-net does, so building this directory alone still works.
+COMPAD_VERSION ?= v0.0.0
+
+CFLAGS = -Wall -Wextra -Werror -O2 -fomit-frame-pointer -m68000 \
+         -DCOMPAD_VERSION='"$(COMPAD_VERSION)"'
 BUILD  = build
 
 # xpad comes in as a submodule; a provider links both halves.

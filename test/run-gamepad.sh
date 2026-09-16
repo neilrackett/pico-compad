@@ -43,7 +43,7 @@ hatari_boot VIEWTEST.TOS
 
 hatari_wait "XPAD-DONE" 60
 
-hatari_expect "provider COMpad 0.1"     "the provider is COMpad"
+hatari_expect "provider COMpad v"     "the provider is COMpad"
 hatari_expect "caps     0001"           "XPAD_CAP_ANALOG is claimed"
 hatari_expect "type Xbox"               "the descriptor set the pad type"
 # 0x2e80 = WEST | TR | TL2 | TR2 | START. WEST rather than NORTH is the

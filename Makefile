@@ -150,8 +150,11 @@ simulator:
 tos:
 	@. test/tos.sh && tos_find && echo "TOS: $$TOS"
 
+# One version, in one file, the way md-net and md-doom do it.
+COMPAD_VERSION := $(shell cat version.txt 2>/dev/null || echo v0.0.0)
+
 st:
-	$(MAKE) -C target/atarist
+	$(MAKE) -C target/atarist COMPAD_VERSION=$(COMPAD_VERSION)
 
 $(BUILD):
 	@mkdir -p $(BUILD)

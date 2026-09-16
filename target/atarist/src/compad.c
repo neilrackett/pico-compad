@@ -39,7 +39,19 @@
 #include "protocol.h"
 #include "xpad.h"
 
-#define PROVIDER "COMpad 0.1"
+/* COMPAD_VERSION comes from version.txt via the Makefile, so the
+ * banner, the provider string a consumer reads out of the cookie jar
+ * and the release all say the same thing. */
+#define PROVIDER "COMpad " COMPAD_VERSION
+
+/*
+ * Banner and messages follow md-net's shape: a version and licence
+ * line, a blank line, then what happened. Lines stay inside 40 columns
+ * so they are readable in ST low resolution, which is where a game
+ * machine usually sits.
+ */
+#define BANNER "\r\n" PROVIDER " (c)2026 Neil Rackett\r\n" \
+               "GPLv3 neilrackett.com/atarist\r\n\r\n"
 
 /* Rsconf's table counts down from the fastest, so 0 is 19200 and 1 is
  * 9600. Drop back to 1 if a marginal cable makes the link flaky: both
@@ -358,15 +370,17 @@ static void claim_mfp(void)
     previous = Bconmap(BCONMAP_MFP);
 
     if (previous > 0 && previous != BCONMAP_MFP)
-        printf("BIOS device 1 was mapped to %ld; claimed the MFP.\r\n",
-               previous);
+        printf("BIOS device 1 was on %ld, claimed the MFP.\r\n", previous);
 }
 
 static int install(void)
 {
+    printf(BANNER);
+
     if (xpad_find())
     {
-        printf("An xpad provider is already installed. Leaving it alone.\r\n");
+        printf("An Xpad provider is already installed,\r\n");
+        printf("so this one has left it alone.\r\n");
         return 0;
     }
 
@@ -378,7 +392,8 @@ static int install(void)
 
     if (!aux)
     {
-        printf("No AUX input record; cannot read the serial port.\r\n");
+        printf("No AUX input record, so the serial\r\n");
+        printf("port cannot be read.\r\n");
         return 0;
     }
 
@@ -389,7 +404,8 @@ static int install(void)
 
     if (!xpad_publish(&block))
     {
-        printf("Could not install the XPAD cookie. Is the jar full?\r\n");
+        printf("Could not add the XPAD cookie.\r\n");
+        printf("The cookie jar may be full.\r\n");
         return 0;
     }
 
@@ -398,8 +414,7 @@ static int install(void)
     compad_etv_chain = (void (*)(void))Setexc(ETV_TIMER_VEC, (void (*)())-1L);
     (void)Setexc(ETV_TIMER_VEC, compad_etv_entry);
 
-    printf("%s installed: serial pads on the cookie jar.\r\n", PROVIDER);
-    printf("listening on the MFP port (Serial 2 on a Mega STE).\r\n");
+    printf("Xpad provider listening on Modem 1.\r\n");
 
     return 1;
 }

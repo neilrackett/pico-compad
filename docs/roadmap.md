@@ -82,7 +82,7 @@ downstream is lied to.
 - Frame decoder in its own file with no TOS headers, so it can be unit
   tested on the host. This is where the logic worth getting wrong lives.
 - `Rsconf` at 19200, its fastest, handshake mode 0.
-- Publish as `"COMpad 0.1"`.
+- Publish as `"COMpad <version>"`, from version.txt.
 - Verify with `xpadview` before anything else consumes it.
 
 **Exit criteria:** press a key in the browser, watch the corresponding
