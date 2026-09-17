@@ -48,7 +48,12 @@ hatari_expect "caps     0001"           "XPAD_CAP_ANALOG is claimed"
 hatari_expect "type Xbox"               "the descriptor set the pad type"
 # 0x2e80 = WEST | TR | TL2 | TR2 | START. WEST rather than NORTH is the
 # X/Y trap: js-xpad calls that button X, and it must not land on XPAD_X.
-hatari_expect "buttons  00002e80"       "buttons, with the left face button as WEST"
+# 2e88, not 2e80: the extra 0x08 is XPAD_RIGHT, folded from the stick.
+# The simulated pad holds lx 64, which clears the provider's deadzone, so
+# this line is also the end to end check that the provider folds stick
+# direction into the d-pad bits the way xpad.h requires. A digital
+# consumer such as STDL reads those bits and never looks at the axes.
+hatari_expect "buttons  00002e88"       "buttons, with WEST and the folded stick"
 hatari_expect "sticks   64,-32 -127,95" "signed axes survived the wire"
 hatari_expect "triggers 64 255"         "unsigned triggers survived the wire"
 hatari_verdict "a simulated gamepad reads correctly on the ST" \

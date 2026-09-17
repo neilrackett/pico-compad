@@ -55,6 +55,15 @@
                "GPLv3 neilrackett.com/atarist\r\n\r\n"
 
 /*
+ * Deadzone for folding the left stick into the d-pad bits, in the same
+ * -127..127 units as the axes. 40 is what xpad's own viewer uses in the
+ * demo provider it labels "exactly as a real provider should", so it is
+ * the reference value rather than a guess. Radial, so the diagonals a
+ * box test would miss are reached: xpad_fold_stick does that part.
+ */
+#define STICK_DEADZONE 40
+
+/*
  * Iorec(0) follows the Bconmap mapping, so on a Mega STE reading a ring
  * that belongs to one of the SCC ports looks exactly like a dead cable.
  * The mapping is forced to the MFP rather than assumed. The device
@@ -111,6 +120,22 @@ static void apply_frame(const uint8_t *f)
         p->ry = COMPAD_STATE_RY(f);
         p->lt = COMPAD_STATE_LT(f);
         p->rt = COMPAD_STATE_RT(f);
+
+        /*
+         * Fold the left stick into the d-pad bits. xpad.h makes this
+         * the provider's job precisely so a consumer that wants only
+         * digital directions can ignore the analogue fields, and STDL
+         * is such a consumer: it reads the d-pad bits alone. Without
+         * this the stick is invisible to every digital consumer while
+         * the d-pad works, which is exactly how it presented.
+         *
+         * After the axes are stored and the buttons assigned, because
+         * it ORs into buttons and both are replaced from this frame.
+         * The right stick is left alone: it is a look or mouse axis,
+         * and folding it would fight the left.
+         */
+        xpad_fold_stick(p, p->lx, p->ly, STICK_DEADZONE);
+
         if (p->type == XPAD_TYPE_NONE)
             p->type = XPAD_TYPE_GAMEPAD;
         break;
@@ -285,6 +310,35 @@ static int selftest(void)
     check(xpad_read(&block, 0, &out) && out.type == XPAD_TYPE_NONE,
           "pad 0 stays empty");
     check(xpad_connected(&block) == 1, "one pad connected");
+
+    /*
+     * The left stick folds into the d-pad bits, with no buttons held.
+     *
+     * This is the check that was missing when a game saw a working
+     * d-pad and a dead stick: STDL, and any consumer that wants only
+     * digital directions, reads the direction bits and never looks at
+     * the axes, exactly as xpad.h invites it to. Asserting the axes
+     * arrive is not the same test.
+     */
+    memset(body, 0, sizeof(body));
+    body[4] = (uint8_t)(int8_t)-120; /* ly hard up, +y being down */
+    n = mkframe(f, COMPAD_TYPE_STATE, 2, body, 9);
+    compad_bytes(f, n);
+    publish_shadow();
+
+    check(xpad_read(&block, 2, &out) && (out.buttons & XPAD_UP),
+          "the left stick folds into the d-pad");
+    check(out.ly == -120, "and the analogue value survives the fold");
+
+    /* Inside the deadzone nothing folds, or a resting pad would walk. */
+    memset(body, 0, sizeof(body));
+    body[3] = 20; /* lx, well under STICK_DEADZONE */
+    n = mkframe(f, COMPAD_TYPE_STATE, 2, body, 9);
+    compad_bytes(f, n);
+    publish_shadow();
+
+    check(xpad_read(&block, 2, &out) && !(out.buttons & XPAD_DPAD),
+          "a stick inside the deadzone folds nothing");
 
     /* A descriptor upgrades the type, flags and caps. */
     body[0] = XPAD_TYPE_XBOX;
