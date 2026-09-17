@@ -2,199 +2,194 @@
 /* SPDX-FileCopyrightText: 2026 Neil Rackett */
 
 /*
- * Phase 0: prove the pipe.
+ * Pipe check: is anything reaching the serial port, and does it frame?
  *
- * Reads the serial port through TOS and reports whether COMpad frames
- * are arriving intact. Deliberately throwaway: no xpad, no interrupts,
- * no residency. If this prints frames, the emulated wiring, baud and
- * framing are all proven, and everything after it is software.
+ * Phase 0's throwaway, and still the first thing to run on new
+ * hardware. Three passes: a short sample that ends in a verdict, a hunt
+ * across the other serial ports if that sample saw nothing, and then a
+ * live watch until a key is pressed.
  *
- * The harness watches for the COMPAD-DONE line, exit-status style,
- * since Hatari cannot pass a status out.
+ * The harness watches for the COMPAD-DONE line, exit-status style, and
+ * tears the emulator down when it sees it. Everything after that line
+ * is for a person at a real machine and never runs under Hatari.
  */
 
 #include <mint/osbind.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "protocol.h"
+#include "stport.h"
 
-#define BAUD_19200 0 /* Rsconf speed code, 0 is its fastest */
-#define UCR_8N1 0x88
+#define TIMEOUT_TICKS 750 /* ~15 s of Vsync at 50 Hz               */
+#define ENOUGH_TO_PASS 3  /* a handful proves the framing           */
+#define ENOUGH_FRAMES 10  /* stop the sample early once it has them */
+#define HUNT_TICKS 150    /* ~3 s per port, several keepalives      */
+#define DUMP_BYTES 24     /* hex of the first few, then "..."       */
+
+/* Everything one pass over the port learns. */
+typedef struct
+{
+    long bytes;
+    long frames;
+    uint32_t buttons; /* from the latest state frame */
+    int8_t lx, ly;
+    int dumped;       /* bytes printed as hex so far */
+} SEEN;
 
 /*
- * Bconmap devices, for the hunt below. A Mega STE has three serial
- * ports on two different chips, the rear panel labels vary between
- * machines and documentation, and an adapter on the wrong one is
- * indistinguishable from a dead cable: Bconin(1) follows the mapping,
- * so it reads a ring nothing is filling. Rather than argue about which
- * socket is which, ask each in turn and report where the bytes are.
+ * Drain whatever is waiting on device 1 through the decoder, once.
+ * Every pass here is this in a loop with a different stop condition,
+ * so the byte and frame accounting lives in one place.
+ *
+ * With dump set, the first DUMP_BYTES bytes go to the screen as hex,
+ * which is what tells you a baud mismatch from a dead wire: garbage is
+ * a rate problem, nothing is a wiring one.
  */
-#define BCONMAP_MFP 6   /* the ST-compatible port, the boot default */
-#define BCONMAP_SCC_B 7 /* a Mega STE's other DE-9                  */
-#define BCONMAP_SCC_A 9 /* the LAN socket                           */
-#define TOS_WITH_BCONMAP 0x0200
-
-#define HUNT_TICKS 150 /* ~3 s each, enough for several keepalives */
-
-#define TIMEOUT_TICKS 750 /* ~15 s of Vsync at 50 Hz */
-#define ENOUGH_TO_PASS 3 /* a handful proves the framing */
-#define ENOUGH_FRAMES 10
-
-/* The OS header pointer lives at 0x4f2, below 0x800, and the ST bus
- * errors on user mode access down there, so this runs under Supexec
- * exactly as compad.c does. */
-static unsigned short tos_version;
-
-static long read_tos_version(void)
+static void poll_port(COMPAD_DECODER *d, SEEN *s, int dump)
 {
-    char *sysbase = *(char **)0x4f2L;
-
-    tos_version = *(unsigned short *)(sysbase + 2);
-
-    return 0;
-}
-
-/* Count what arrives on whatever port is mapped now. */
-static long drain(long ticks_for, long *frames_out)
-{
-    COMPAD_DECODER d;
-    long bytes = 0, frames = 0, t;
-
-    compad_init(&d);
-
-    for (t = 0; t < ticks_for; t++)
+    while (Bconstat(1))
     {
-        while (Bconstat(1))
+        uint8_t b = (uint8_t)Bconin(1);
+        uint8_t got;
+
+        if (dump && s->dumped < DUMP_BYTES)
         {
-            if (compad_feed(&d, (uint8_t)Bconin(1)))
-                frames++;
-            bytes++;
+            printf("%02x ", b);
+            if (++s->dumped == DUMP_BYTES)
+                printf("...\r\n");
         }
 
-        Vsync();
+        s->bytes++;
+        got = compad_feed(d, b);
+
+        if (!got)
+            continue;
+
+        s->frames++;
+
+        if (COMPAD_HDR_TYPE(d->buf[1]) == COMPAD_TYPE_STATE)
+        {
+            s->buttons = compad_state_buttons(d->buf);
+            s->lx = COMPAD_STATE_LX(d->buf);
+            s->ly = COMPAD_STATE_LY(d->buf);
+        }
     }
-
-    *frames_out = frames;
-
-    return bytes;
 }
 
 /*
- * Nothing came in where we looked. Before blaming the wiring, try the
- * other serial ports: on a Mega STE the adapter may simply be in a
- * different socket from the one the BIOS is pointed at.
+ * Nothing came in where we looked. Before blaming the wiring, try every
+ * serial port in turn: on a Mega STE the adapter may simply be in a
+ * different socket from the one the BIOS is pointed at, and the MFP is
+ * included because "the one we already tried" is exactly what a
+ * resident driver may have remapped.
  */
-static void hunt(void)
+static int hunt(void)
 {
-    /*
-     * All three, including the MFP. The first pass above used whatever
-     * device 1 happened to be mapped to, which is normally the MFP but
-     * is exactly what a resident driver may have changed, so assuming
-     * it was already covered is how the interesting case gets skipped.
-     * Three seconds each.
-     */
-    static const struct { int dev; const char *name; } ports[] = {
-        {BCONMAP_MFP, "MFP 68901, the ST-compatible port"},
-        {BCONMAP_SCC_B, "SCC channel B"},
-        {BCONMAP_SCC_A, "SCC channel A, the LAN socket"},
-    };
     long was;
+    int found = 0;
     unsigned i;
 
-    Supexec(read_tos_version);
-
-    if (tos_version < TOS_WITH_BCONMAP)
-        return; /* no Bconmap on this TOS, so there is nothing to try */
+    if (!stport_has_bconmap())
+        return 0; /* no Bconmap on this TOS, so there is nothing to try */
 
     printf("\r\nnothing on the mapped port. trying all three...\r\n");
     fflush(stdout);
 
-    was = Bconmap(BCONMAP_MFP);
+    was = Bconmap(-1); /* remember the mapping without changing it */
 
-    for (i = 0; i < sizeof(ports) / sizeof(ports[0]); i++)
+    for (i = 0; i < STPORT_COUNT; i++)
     {
-        long frames = 0, bytes;
+        COMPAD_DECODER d;
+        SEEN s;
+        long t;
 
-        Bconmap(ports[i].dev);
-        Rsconf(BAUD_19200, 0, UCR_8N1, -1, -1, -1);
-        bytes = drain(HUNT_TICKS, &frames);
+        /* A plain ST or STE on TOS 2 has Bconmap but only the MFP, and
+         * a device it lacks leaves the mapping where it was: sample it
+         * anyway and the MFP's bytes get reported under a port that
+         * does not exist. */
+        if (!stport_select(stports[i].dev))
+        {
+            printf("  device %d, %-28s not on this machine\r\n",
+                   stports[i].dev, stports[i].name);
+            continue;
+        }
 
-        printf("  device %d, %-33s %ld bytes, %ld frames\r\n",
-               ports[i].dev, ports[i].name, bytes, frames);
+        memset(&s, 0, sizeof(s));
+        compad_init(&d);
 
-        if (bytes > 0)
+        for (t = 0; t < HUNT_TICKS; t++)
+        {
+            poll_port(&d, &s, 0);
+            Vsync();
+        }
+
+        printf("  device %d, %-28s %ld bytes, %ld frames\r\n",
+               stports[i].dev, stports[i].name, s.bytes, s.frames);
+
+        if (s.bytes > 0 && !found)
+        {
             printf("  ^^ the adapter is on this one\r\n");
+            found = stports[i].dev;
+        }
 
         fflush(stdout);
     }
 
     Bconmap(was);
+
+    return found;
 }
 
 int main(void)
 {
     COMPAD_DECODER d;
-    long bytes = 0;
-    long frames = 0;
+    SEEN s;
+    SEEN shown;
     long ticks;
-    uint32_t buttons = 0;
-    int8_t lx = 0, ly = 0;
+    int passed;
+    int port = 0;
 
-    Rsconf(BAUD_19200, 0, UCR_8N1, -1, -1, -1);
+    memset(&s, 0, sizeof(s));
+    stport_configure();
     compad_init(&d);
 
-    printf("COMpad pipe check: AUX at 19200 8N1\r\n");
+    printf("COMpad pipe check: AUX at %d 8N1\r\n", COMPAD_BAUD);
 
-    for (ticks = 0; ticks < TIMEOUT_TICKS && frames < ENOUGH_FRAMES; ticks++)
+    /* A short sample, ending in a verdict. */
+    for (ticks = 0; ticks < TIMEOUT_TICKS && s.frames < ENOUGH_FRAMES; ticks++)
     {
-        while (Bconstat(1))
-        {
-            uint8_t b = (uint8_t)Bconin(1);
-            uint8_t got;
-
-            if (bytes < 24)
-                printf("%02x ", b);
-            else if (bytes == 24)
-                printf("...\r\n");
-
-            bytes++;
-
-            got = compad_feed(&d, b);
-
-            if (got == 12)
-            {
-                if (frames == 0)
-                    printf("\r\nfirst frame: pad %d buttons %06lx "
-                           "lx %d ly %d lt %u\r\n",
-                           COMPAD_HDR_PAD(d.buf[1]),
-                           (unsigned long)compad_state_buttons(d.buf),
-                           COMPAD_STATE_LX(d.buf), COMPAD_STATE_LY(d.buf),
-                           COMPAD_STATE_LT(d.buf));
-                frames++;
-            }
-            else if (got != 0)
-            {
-                frames++; /* compact or descriptor: still a frame */
-            }
-        }
-
+        poll_port(&d, &s, 1);
         Vsync();
     }
 
-    printf("\r\n%ld bytes, %ld valid frames\r\n", bytes, frames);
+    passed = s.frames >= ENOUGH_TO_PASS;
 
-    if (frames >= ENOUGH_TO_PASS)
+    printf("\r\n%ld bytes, %ld valid frames\r\n", s.bytes, s.frames);
+
+    if (passed)
         printf("the pipe works\r\n");
-    else if (bytes > 0)
+    else if (s.bytes > 0)
         printf("bytes flow but do not frame: check baud and the writer\r\n");
     else
         printf("nothing arrived on this port\r\n");
 
-    printf("COMPAD-DONE %d\r\n", frames >= ENOUGH_TO_PASS ? 0 : 1);
+    printf("COMPAD-DONE %d\r\n", passed ? 0 : 1);
     fflush(stdout);
 
-    if (bytes == 0)
-        hunt();
+    if (s.bytes == 0)
+        port = hunt();
+
+    /* If the hunt found the adapter somewhere else, watch there:
+     * watching the port that already produced nothing would show zeros
+     * for ever while the user waggled a stick that is being heard. */
+    if (port)
+    {
+        stport_select(port);
+        compad_init(&d);
+        printf("\rwatching device %d\r\n", port);
+    }
 
     /*
      * Then watch, until a key. The verdict above is a total after the
@@ -203,50 +198,34 @@ int main(void)
      * with it. That is the difference between a wire that works and a
      * wire that is picking something up.
      *
-     * One line, overwritten with a carriage return, four times a
-     * second. The TOS console is slow enough that a line per frame at
-     * 50 Hz would never keep up, which is the same reason xpadview
-     * redraws only what changed.
-     *
-     * All of this sits after the COMPAD-DONE line, deliberately: the
-     * Hatari runner waits for that marker and tears the emulator down,
-     * so it never reaches here and never waits on a key that nothing
-     * will press.
+     * One short line, overwritten with a carriage return, twice a
+     * second. The TOS console is slow: a line per frame at 50 Hz would
+     * never keep up, and even this line takes long enough to print that
+     * the AUX ring can fill behind it on a slow console, which is why
+     * it is short and infrequent. xpadview redraws only what changed
+     * for the same reason.
      */
     printf("\r\nwatching the wire, press any key to stop\r\n");
     fflush(stdout);
 
-    lx = ly = 0;
-    buttons = 0;
+    shown = s;
+    shown.frames = -1; /* so the first line prints */
 
     for (ticks = 0; !Bconstat(2); ticks++)
     {
-        while (Bconstat(1))
+        poll_port(&d, &s, 0);
+
+        /* Only when something on the line has changed, and at most
+         * twice a second: an idle pad then costs the console nothing,
+         * and a moving one cannot outrun it. */
+        if ((ticks % 25) == 0 &&
+            (s.frames != shown.frames || s.lx != shown.lx ||
+             s.ly != shown.ly || s.buttons != shown.buttons))
         {
-            uint8_t b = (uint8_t)Bconin(1);
-            uint8_t got = compad_feed(&d, b);
-
-            bytes++;
-
-            if (got == 0)
-                continue;
-
-            frames++;
-
-            if (got == 12)
-            {
-                buttons = compad_state_buttons(d.buf);
-                lx = COMPAD_STATE_LX(d.buf);
-                ly = COMPAD_STATE_LY(d.buf);
-            }
-        }
-
-        /* Every 12 vsyncs, so about four times a second. */
-        if ((ticks % 12) == 0)
-        {
-            printf("\rbytes %ld  frames %ld  L %4d,%4d  buttons %06lx   ",
-                   bytes, frames, (int)lx, (int)ly, (unsigned long)buttons);
+            printf("\rframes %ld  L %4d,%4d  buttons %06lx   ",
+                   s.frames, (int)s.lx, (int)s.ly, (unsigned long)s.buttons);
             fflush(stdout);
+            shown = s;
         }
 
         Vsync();
@@ -255,5 +234,5 @@ int main(void)
     Cconin(); /* swallow the key that stopped us */
     printf("\r\n");
 
-    return frames >= ENOUGH_TO_PASS ? 0 : 1;
+    return passed ? 0 : 1;
 }

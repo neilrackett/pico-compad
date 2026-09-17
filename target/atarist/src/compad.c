@@ -37,6 +37,7 @@
 #include <string.h>
 
 #include "protocol.h"
+#include "stport.h"
 #include "xpad.h"
 
 /* COMPAD_VERSION comes from version.txt via the Makefile, so the
@@ -53,27 +54,13 @@
 #define BANNER "\r\n" PROVIDER " (c)2026 Neil Rackett\r\n" \
                "GPLv3 neilrackett.com/atarist\r\n\r\n"
 
-/* Rsconf's table counts down from the fastest, so 0 is 19200 and 1 is
- * 9600. Drop back to 1 if a marginal cable makes the link flaky: both
- * ends must agree, so change rp/src/config.h with it. */
-#define BAUD_19200 0
-#define UCR_8N1 0x88
-
 /*
- * Bconmap device numbers. On a Mega STE the port that matches a plain
- * ST's modem port is "Serial 2", the 9-pin socket below the VME slot,
- * driven by the same MFP 68901 at $FFFA00 and so register and
- * interrupt compatible with ST/STE code. It is device 6 and the
- * default at boot, but the machine also has two SCC 85C30 ports that
- * can be mapped over device 1: Serial 1 is channel B (device 7) and
- * the LAN socket is channel A (device 9).
- *
- * That matters here because Iorec(0) follows the mapping. Reading a
- * ring that belongs to an SCC port looks exactly like a dead cable, so
- * the mapping is forced rather than assumed.
+ * Iorec(0) follows the Bconmap mapping, so on a Mega STE reading a ring
+ * that belongs to one of the SCC ports looks exactly like a dead cable.
+ * The mapping is forced to the MFP rather than assumed. The device
+ * numbers and what they correspond to on the rear panel are in
+ * stport.h, shared with the bring-up tools.
  */
-#define BCONMAP_MFP 6
-#define TOS_WITH_BCONMAP 0x0200
 
 #define ETV_TIMER_VEC 0x100 /* vector number: address $400 */
 
@@ -339,19 +326,6 @@ static int selftest(void)
 /* Install                                                             */
 /* ------------------------------------------------------------------ */
 
-static unsigned short tos_version;
-
-/* The OS header pointer lives at 0x4f2, below 0x800, and the ST bus
- * errors on user mode access down there. */
-static long read_tos_version(void)
-{
-    char *sysbase = *(char **)0x4f2L;
-
-    tos_version = *(unsigned short *)(sysbase + 2);
-
-    return 0;
-}
-
 /*
  * Point BIOS device 1 at the MFP, and say so if it was pointing
  * somewhere else. Bconmap arrived with the machines that have more
@@ -362,9 +336,7 @@ static void claim_mfp(void)
 {
     long previous;
 
-    Supexec(read_tos_version);
-
-    if (tos_version < TOS_WITH_BCONMAP)
+    if (tos_version() < TOS_WITH_BCONMAP)
         return;
 
     previous = Bconmap(BCONMAP_MFP);
@@ -387,7 +359,7 @@ static int install(void)
     init_block();
 
     claim_mfp();
-    Rsconf(BAUD_19200, 0, UCR_8N1, -1, -1, -1);
+    stport_configure();
     aux = (_IOREC *)Iorec(0);
 
     if (!aux)

@@ -75,10 +75,10 @@ bits move in `XPADVIEW.TOS`.
 | ----------------- | ------------------------------------------------------------------ |
 | `rp/`             | Pico W adapter firmware: Bluepad32 in, COMpad frames out           |
 | `target/atarist/` | ST provider, the wire-protocol decoder, the test programs, and `XPADVIEW.TOS` built from the submodule |
-| `harness/`        | dev rig: frame writer, server, keyboard and gamepad pages, and `wire.js`, the loopback measurement |
+| `harness/`        | dev rig: frame writer, server, keyboard and gamepad pages, `wire.js` for loopback timing, `listen.js` to decode an adapter's output |
 | `test/`           | host tests for the decoder, Hatari end-to-end runners              |
 | `docs/`           | protocol, hardware, roadmap, design notes                          |
-| `dist/`           | `make dist` output: the UF2 to flash and the two ST programs       |
+| `dist/`           | `make dist` output: everything that goes onto hardware, listed as it runs |
 | `lib/`            | submodules: `xpad` at v1.1.0, plus `pico-sdk`, `pico-extras` and `bluepad32` |
 
 Two different things are called xpad, and it is worth keeping them

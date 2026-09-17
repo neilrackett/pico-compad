@@ -161,10 +161,11 @@ for the descriptor repeat below. The browser and gamepad senders both
 do this; `harness/frames.js` deliberately does not, because the phase 0
 pipe check wants an unconditional stream. An adapter should.
 
-**19200 is the default, and it is TOS's ceiling.** `Rsconf`'s speed
-table counts down from the fastest, so 19200 is code 0 and 9600 is code
-1, which is the whole of what it takes to change: `compad.c` on the ST
-and `COMPAD_BAUD` in the firmware, together. Both ends must agree.
+**19200 is the default, and it is TOS's ceiling.** It is one constant,
+`COMPAD_BAUD` in `protocol.h`, which both the firmware and the ST
+programs compile: the firmware uses it directly and `stport.h` derives
+the `Rsconf` speed code from it, so the two ends cannot disagree. To
+drop to 9600 change that one line.
 
 38400 is the one that needs more than a constant. It is not in
 `Rsconf`'s table at all, so it means driving Timer D directly (prescale

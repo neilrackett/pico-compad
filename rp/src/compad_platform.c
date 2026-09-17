@@ -21,6 +21,7 @@
 #include <hardware/gpio.h>
 #include <hardware/uart.h>
 #include <pico/cyw43_arch.h>
+#include <stdio.h>
 #include <string.h>
 #include <uni.h>
 
@@ -55,9 +56,10 @@ static uint8_t rx_have;
 static uint16_t rx_age;
 
 /* Blink phase, ticks since the bond answer was last refreshed, and how
- * long the button has been held. */
+ * long the button has been held. bond_age starts due, so the first
+ * disconnected tick asks rather than blinking a guess for a second. */
 static uint16_t blink;
-static uint16_t bond_age;
+static uint16_t bond_age = COMPAD_BOND_RESCAN;
 static uint16_t held_ticks;
 
 /* ------------------------------------------------------------------ */
@@ -110,24 +112,16 @@ static void send_descriptor(uint8_t pad)
  * new pad; with keys, it is waiting for one it knows. That is the whole
  * of the "no pairing mode" design.
  *
- * Cached, because the answer changes about twice in a device's life and
- * the question is not free to ask: each lookup walks up to 16 TLV tags
- * and each of those rescans the flash bank from the start. It is XIP
- * reads rather than a flash transaction, so this is tidiness rather
- * than a fire, but it is asked 50 times a second while idle.
- *
- * Both databases have to be asked, which is the whole of why this was
- * wrong on hardware first time out. A controller bonds over Classic or
+ * Both databases have to be asked. A controller bonds over Classic or
  * over BLE depending on what it is, and the two keep their keys in
  * different places: Classic in the link key database that
  * gap_link_key_iterator walks, BLE in the LE device database. An Xbox
  * Series pad bonds over BLE, so a Classic-only check reported no bonds
- * while the pad was reconnecting on its own in front of us, and the LED
- * claimed to be looking for a new pad for ever.
+ * while the pad was reconnecting on its own in front of us.
  *
- * Refreshed at the points that can change it, and then re-asked once a
- * second while nothing is connected, so a cache can never get stuck on
- * a stale no.
+ * Cached, because it picks the blink rate on every tick, and asked
+ * once a second while nothing is connected. One mechanism: the events
+ * that change the answer just mark it due, so the next tick asks.
  */
 static bool bonds;
 
@@ -137,7 +131,7 @@ static bool scan_bonds(void)
     bd_addr_t addr;
     link_key_t key;
     link_key_type_t type;
-    bool any = false;
+    bool any;
 
     if (le_device_db_count() > 0)
         return true;
@@ -145,17 +139,10 @@ static bool scan_bonds(void)
     if (!gap_link_key_iterator_init(&it))
         return false;
 
-    if (gap_link_key_iterator_get_next(&it, addr, key, &type))
-        any = true;
-
+    any = gap_link_key_iterator_get_next(&it, addr, key, &type);
     gap_link_key_iterator_done(&it);
 
     return any;
-}
-
-static void refresh_bonds(void)
-{
-    bonds = scan_bonds();
 }
 
 static bool any_connected(void)
@@ -207,14 +194,14 @@ static void led_tick(void)
     {
         led_set(true);
         blink = 0;
-        bond_age = 0;
+        bond_age = COMPAD_BOND_RESCAN; /* due: the first disconnected tick asks */
         return;
     }
 
     if (++bond_age >= COMPAD_BOND_RESCAN)
     {
         bond_age = 0;
-        refresh_bonds();
+        bonds = scan_bonds();
     }
 
     period = bonds ? COMPAD_BLINK_SLOW : COMPAD_BLINK_FAST;
@@ -251,8 +238,14 @@ static void button_tick(void)
     if (held_ticks == hold)
     {
         logi("compad: forgetting bonded pads\n");
-        uni_bt_del_keys_safe();
-        refresh_bonds();
+
+        /* The _unsafe form, deliberately: this runs inside the BTstack
+         * run loop (the tick is one of its timers), where it is legal,
+         * and it deletes now rather than posting a request that lands
+         * later. Marking the answer due then flips the LED on the next
+         * tick, which is the confirmation the wipe worked. */
+        uni_bt_del_keys_unsafe();
+        bond_age = COMPAD_BOND_RESCAN;
     }
 }
 
@@ -283,22 +276,28 @@ static void rx_tick(void)
     }
 
     /* Once a second, and only when there is something to say, so a
-     * quiet link does not fill the console. */
-    if (++rx_age < (1000 / COMPAD_TICK_MS))
+     * quiet link does not fill the console. Info level, not debug: the
+     * shipped log level is 2 and this line is the whole point of
+     * SENDTEST.TOS, so demoting it once made that tool print nothing.
+     * One call, not nine, because each goes over USB CDC and can block
+     * on a host that is not draining. The bytes shown are the first of
+     * the second, which is what says whether the rate is right. */
+    if (++rx_age < COMPAD_TICKS_PER_SEC)
         return;
 
     rx_age = 0;
 
     if (rx_have)
     {
+        char line[sizeof(rx_last) * 3 + 1];
+        int n = 0;
         unsigned i;
 
-        logi("compad: rx %lu bytes, first:", (unsigned long)rx_bytes);
-
         for (i = 0; i < rx_have; i++)
-            logi(" %02x", rx_last[i]);
+            n += snprintf(line + n, sizeof(line) - n, " %02x", rx_last[i]);
 
-        logi("\n");
+        logi("compad: rx %lu bytes, first:%s\n", (unsigned long)rx_bytes,
+             line);
         rx_have = 0;
     }
 }
@@ -325,6 +324,11 @@ static void tick(btstack_timer_source_t *ts)
     btstack_run_loop_set_timer(ts, COMPAD_TICK_MS);
     btstack_run_loop_add_timer(ts);
 
+    /* First, before the sends: they block on a full TX FIFO, and the
+     * 32 byte RX FIFO holds less than one tick of 19200, so draining
+     * after them is exactly when bytes would be lost. */
+    rx_tick();
+
     for (i = 0; i < COMPAD_PADS; i++)
     {
         COMPAD_SLOT *s = &slots[i];
@@ -350,7 +354,6 @@ static void tick(btstack_timer_source_t *ts)
 
     led_tick();
     button_tick();
-    rx_tick();
 }
 
 /* ------------------------------------------------------------------ */
@@ -384,9 +387,7 @@ static void compad_on_init_complete(void)
     btstack_run_loop_set_timer(&tick_timer, COMPAD_TICK_MS);
     btstack_run_loop_add_timer(&tick_timer);
 
-    refresh_bonds();
-    logi("compad: ready, %s\n",
-         bonds ? "waiting for a known pad" : "looking for a new pad");
+    logi("compad %s: ready\n", COMPAD_VERSION);
 }
 
 static uni_error_t compad_on_device_discovered(bd_addr_t addr,
@@ -434,10 +435,6 @@ static void compad_on_device_disconnected(uni_hid_device_t *d)
     send_state((uint8_t)idx);
 
     memset(&slots[idx], 0, sizeof(slots[idx]));
-
-    /* A pad that has just been used is a pad that has just bonded, and
-     * the LED is about to start caring which. */
-    refresh_bonds();
 }
 
 static uni_error_t compad_on_device_ready(uni_hid_device_t *d)

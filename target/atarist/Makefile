@@ -5,9 +5,14 @@
 #   STCMD_NO_TTY=1 stcmd make        (from this directory or via root)
 
 CC     = m68k-atari-mint-gcc
-# Passed in from the repo root, which reads version.txt. Defaulted the
-# way md-net does, so building this directory alone still works.
-COMPAD_VERSION ?= v0.0.0
+# Read directly, so building from this directory says the same version
+# as building from the root, and a missing file is an error rather than
+# a fake number quietly published on the cookie jar.
+VERSION_FILE = ../../version.txt
+ifeq ($(wildcard $(VERSION_FILE)),)
+$(error $(VERSION_FILE) is missing: it holds the one version everything reports)
+endif
+COMPAD_VERSION := $(shell cat $(VERSION_FILE))
 
 CFLAGS = -Wall -Wextra -Werror -O2 -fomit-frame-pointer -m68000 \
          -DCOMPAD_VERSION='"$(COMPAD_VERSION)"'
@@ -18,7 +23,7 @@ XPAD     = ../../lib/xpad/src
 XPADSRC  = $(XPAD)/xpad.c $(XPAD)/xpad_provider.c
 
 COMPADSRC = src/compad.c src/etv.s $(XPADSRC)
-COMPADDEP = $(COMPADSRC) src/protocol.h $(XPAD)/xpad.h
+COMPADDEP = $(COMPADSRC) src/protocol.h $(XPAD)/xpad.h src/stport.h $(VERSION_FILE)
 
 all: $(BUILD)/PIPECHK.TOS $(BUILD)/SENDTEST.TOS \
      $(BUILD)/COMPAD.PRG $(BUILD)/CPDTEST.TOS \
@@ -27,10 +32,10 @@ all: $(BUILD)/PIPECHK.TOS $(BUILD)/SENDTEST.TOS \
 
 # Bring-up only: the ST transmitting, which is the direction that is
 # easy to read because the adapter's console can report what arrived.
-$(BUILD)/SENDTEST.TOS: src/sendtest.c | $(BUILD)
+$(BUILD)/SENDTEST.TOS: src/sendtest.c src/stport.h | $(BUILD)
 	$(CC) $(CFLAGS) src/sendtest.c -o $@
 
-$(BUILD)/PIPECHK.TOS: src/pipechk.c src/protocol.h | $(BUILD)
+$(BUILD)/PIPECHK.TOS: src/pipechk.c src/protocol.h src/stport.h | $(BUILD)
 	$(CC) $(CFLAGS) src/pipechk.c -o $@
 
 # Consumer side only: it reads the block a resident provider publishes.

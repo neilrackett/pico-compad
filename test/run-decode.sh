@@ -34,7 +34,5 @@ cp "$BUILD/CPDTEST.TOS" "$WORK/"
 
 hatari_boot CPDTEST.TOS
 
-hatari_wait "COMPAD-DONE [0-9]" 60
-
-hatari_expect "COMPAD-DONE 0" "the provider's own assertions all passed"
+hatari_wait_verdict "COMPAD-DONE" 60 "the provider's own assertions all passed"
 hatari_verdict "compad.c is sound on the ST" "compad.c self test FAILED"

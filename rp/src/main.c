@@ -21,6 +21,7 @@
 #include <uni.h>
 
 #include "config.h"
+#include "protocol.h" /* COMPAD_BAUD */
 #include "sdkconfig.h"
 
 #ifndef CONFIG_BLUEPAD32_PLATFORM_CUSTOM

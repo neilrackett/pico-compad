@@ -69,6 +69,15 @@ add_executable(compad
     src/compad_platform.c
 )
 
+# One version, from the same file the ST side reads, so the UF2 can say
+# which build it is. CONFIGURE_DEPENDS is what stops a stale configure
+# quietly shipping the old number after version.txt changes.
+file(READ ${COMPAD_ROOT}/version.txt COMPAD_VERSION)
+string(STRIP "${COMPAD_VERSION}" COMPAD_VERSION)
+set_property(DIRECTORY APPEND PROPERTY
+             CMAKE_CONFIGURE_DEPENDS ${COMPAD_ROOT}/version.txt)
+target_compile_definitions(compad PRIVATE COMPAD_VERSION="${COMPAD_VERSION}")
+
 # encode.h includes the real xpad, Bluepad32 and protocol headers rather
 # than copying their constants. protocol.h is the shared wire contract
 # that the ST target also compiles, not ST code: it is portable C.

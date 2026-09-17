@@ -18,8 +18,9 @@
 // Reports achieved throughput, round-trip latency for one frame, and
 // whether every byte came back the way it left.
 
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+
+import { openSerial } from './serial.js';
 
 import { XPAD, stateFrame } from './xpadmap.js';
 
@@ -44,17 +45,6 @@ const expected = Buffer.concat(Array.from({ length: wanted }, () => frame));
 
 // ------------------------------------------------------------------
 
-function configure() {
-  // macOS resets a port when the last fd closes, so this has to happen
-  // with ours already open, and a later `stty -f` from a shell will
-  // read 9600 back. That is the port being reopened, not the setting
-  // failing to take.
-  execFileSync('stty', [
-    '-f', port, String(baud),
-    'cs8', '-cstopb', '-parenb', '-crtscts',
-    'raw', '-echo', '-hupcl',
-  ]);
-}
 
 const summary = (label, value) => console.log(`  ${label.padEnd(28)}${value}`);
 
@@ -76,8 +66,7 @@ try {
   // Raspberry Pi Debug Probe, a blocking write of 2400 bytes never
   // returns. Without this the test wedges instead of reporting that
   // the loopback is missing, which is the very thing it exists to say.
-  fd = fs.openSync(port,
-    fs.constants.O_RDWR | fs.constants.O_NOCTTY | fs.constants.O_NONBLOCK);
+  fd = openSerial(port, baud, { write: true });
 } catch (e) {
   console.error(`cannot open ${port}: ${e.code}`);
   console.error('is the adapter plugged in, and is the path right?');
@@ -85,7 +74,6 @@ try {
 }
 
 try {
-  configure();
 } catch (e) {
   console.error(`cannot configure ${port}: ${e.message}`);
   process.exit(1);

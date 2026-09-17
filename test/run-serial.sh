@@ -31,7 +31,5 @@ node harness/frames.js "$FIFO" &
 hatari_own $!
 hatari_boot PIPECHK.TOS
 
-hatari_wait "COMPAD-DONE [0-9]" 60
-
-hatari_expect "COMPAD-DONE 0" "the ST framed up the bytes it received"
+hatari_wait_verdict "COMPAD-DONE" 60 "the ST framed up the bytes it received"
 hatari_verdict "the serial link works" "serial link FAILED"

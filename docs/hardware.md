@@ -49,7 +49,7 @@ trigger: bp_trigger >> 2                     /* 0..1023 to 0..255     */
 Pico presents as DCE, so a straight-through cable works.
 
 Pin numbers below are for the **DE-9** connector on a Mega STE's
-Serial 2, and for the DB25 modem port on a plain ST or STE. Serial 2
+Modem 1, and for the DB25 modem port on a plain ST or STE. Modem 1
 uses the standard PC AT DE-9 pinout, confirmed on hardware: 1 DCD,
 2 RxD, 3 TxD, 4 DTR, 5 GND, 6 DSR, 7 RTS, 8 CTS, 9 RI. The two
 shells swap the data pins: on DE-9 pin 2 is RxD and pin 3 is TxD, on
@@ -106,9 +106,10 @@ ST/STE code and needs no changes: only the connector shell differs.
 This file previously said Serial 2, the socket below the VME slot, and
 said so confidently enough to send somebody to a port that transmits
 but never receives, which is what an SCC channel does when `Rsconf`
-half configures it. The claim had never been checked on a machine. Note
-also that on at least one Mega STE the Serial 2 lead to the blanking
-plate is not connected inside the case at all.
+half configures it. The claim had never been checked on a machine, and
+it contradicted Hatari's manual, which had it right. Note also that on
+at least one Mega STE the Serial 2 lead to the blanking plate is not
+connected inside the case at all.
 
 The machine's other two serial ports are Mega STE additions driven by
 the SCC 85C30 rather than the MFP, and neither is usable by this code
@@ -134,9 +135,6 @@ port would look exactly like a dead cable, so the provider calls
 it if the mapping had moved. Below TOS 2.00 it skips the call: Bconmap
 arrived with the machines that have more than one serial port, and
 anything older has only the MFP to offer anyway.
-
-Hatari's manual calls the Mega STE's MFP port "Modem 1", and the
-hardware agrees: this file used to claim otherwise and was wrong.
 
 ## Driving the port from the ST
 

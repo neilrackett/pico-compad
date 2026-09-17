@@ -26,6 +26,14 @@
 
 #define COMPAD_PROTO_VERSION 0
 
+/*
+ * The line rate, here because this is the one header both ends
+ * compile: rp/src/config.h and target/atarist/src/stport.h each derive
+ * their own form from it, so the two ends cannot disagree. 19200 is
+ * TOS's ceiling through Rsconf; 38400 needs a private MFP handler.
+ */
+#define COMPAD_BAUD 19200
+
 #define COMPAD_TYPE_STATE 0x0
 #define COMPAD_TYPE_COMPACT 0x1
 #define COMPAD_TYPE_REQUEST 0xE

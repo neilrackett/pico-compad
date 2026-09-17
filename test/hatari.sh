@@ -107,17 +107,11 @@ hatari_boot()
     hatari_own $!
 }
 
-# Wait for a program to print its verdict token, or give up.
-# Wait for a marker to appear in the log.
-#
-# Pass the WHOLE line you are about to assert on, not its prefix. The
-# ST prints its verdict as "MARKER <status>" and the emulated console
-# flushes in pieces, so waiting for "MARKER" alone can return between
-# the marker and its status digit. The caller then tears Hatari down and
-# greps a log that will never gain the rest of the line: a run that
-# passed, reported as a failure. It took two suite runs under load to
-# show up, and none in isolation.
-hatari_wait()
+# Private. Waits for a marker to appear anywhere in the log, which is
+# exactly the race hatari_wait_verdict closes, so it is not for runners
+# to call: every program here prints "MARKER <status>", and the wrapper
+# below is the function to use.
+_hatari_wait()
 {
     local marker=$1 timeout=${2:-90} i
     echo "waiting for the verdict (up to ${timeout}s)..."
@@ -126,6 +120,23 @@ hatari_wait()
         sleep 0.1
     done
     return 1
+}
+
+# Wait for "MARKER <status>" and assert the status was 0, in one call.
+#
+# The only way to wait, on purpose: a wait-then-expect split is a race.
+# The ST prints its verdict as "MARKER 0" and the emulated console
+# flushes in pieces, so a wait on the bare marker can return between the
+# marker and its digit; the caller then tears Hatari down and greps a
+# log that will never gain the rest of the line, reporting a run that
+# passed as a failure. It took two suite runs under load to show up and
+# none in isolation. With no public prefix wait, a new runner cannot
+# reintroduce it.
+hatari_wait_verdict()
+{
+    local marker=$1 timeout=${2:-90} what=$3
+    _hatari_wait "$marker [0-9]" "$timeout"
+    hatari_expect "$marker 0" "$what"
 }
 
 # Per-check reporting, so a failure names the assertion that failed

@@ -30,7 +30,7 @@ import path from 'node:path';
 
 // One definition of the wire format, shared with the browser pages and
 // the simulator. fs.writeSync takes the Uint8Array it returns unchanged.
-import { XPAD, stateFrame, descriptorFrame } from './xpadmap.js';
+import { XPAD, stateFrame, descriptorFrame, buttonNames } from './xpadmap.js';
 
 // Overridable so the socket test can run on its own port, and so a
 // stray browser tab still reconnecting to 8232 cannot wander into it.
@@ -55,7 +55,7 @@ const stamp = () => {
 
 // Named bits, so the log reads as keys rather than as hex.
 const describe = (mask) => {
-  const on = Object.keys(XPAD).filter((k) => mask & XPAD[k]);
+  const on = buttonNames(mask);
   return on.length ? on.join('+') : '(none)';
 };
 

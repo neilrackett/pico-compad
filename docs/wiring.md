@@ -69,14 +69,12 @@ fitted already.
 
 ## What to put where
 
-`make dist` collects the four things that go onto hardware:
-
-| File | Goes |
-| ---- | ---- |
-| `dist/compad.uf2` | the Pico: hold BOOTSEL, plug in, copy it across |
-| `dist/COMPAD.PRG` | the ST's `AUTO` folder |
-| `dist/XPADVIEW.TOS` | anywhere on the ST; run it to watch the pad |
-| `dist/PIPECHK.TOS` | anywhere on the ST; run it first, it prints raw bytes |
+`make dist` collects everything that goes onto hardware into `dist/`
+and prints, for each file, what it is and where it goes. That list is
+kept in the Makefile and nowhere else, because prose copies of it have
+already disagreed with it. In short: the UF2 goes on the Pico, the
+`.PRG` goes in the ST's `AUTO` folder, and the `.TOS` programs are run
+by hand.
 
 ## Optional extras
 
@@ -136,7 +134,7 @@ the keys are wiped. That is the confirmation.
 
 | Machine | Socket | Shell |
 | ------- | ------ | ----- |
-| Mega STE | Serial 2, below the VME slot | DE-9 male |
+| Mega STE | Modem 1 | DE-9 male |
 | ST, STE, Mega ST | Modem port | DB25 male |
 
 The two shells swap the data pins, so check which you have before
@@ -164,6 +162,30 @@ to DB25 adapter, since the shell is the only physical difference.
   almost certainly DCE already, then run `PIPECHK.TOS` on the ST. Raw
   bytes appearing at all means the orientation, the level shifter and
   the baud are right. Nothing at all, and you cross pins 2 and 3.
+
+## When nothing arrives
+
+Two things to know before suspecting the wiring.
+
+**The adapter is silent with no controller connected.** It sends
+nothing at all until a pad is paired and awake, so an idle adapter and
+an absent one look identical from the ST. Get the LED solid first.
+
+**A link that works in one direction only is almost always the module's
+`TXD`/`RXD` swapped**, not a broken wire: the other path is separate and
+keeps working. See the note under the diagram.
+
+Then, in order:
+
+- `node harness/listen.js /dev/cu.usbserial-XXXX` with a USB-to-TTL
+  cable on the Pico's GP0, which decodes what the adapter is sending
+  before any level shifter or ST is involved. Silence, bytes that do
+  not frame, and frames mean three different things.
+- `PIPECHK.TOS` on the ST, which says whether bytes reach it and, if
+  not, hunts the other serial ports for them.
+- `SENDTEST.TOS` on the ST, which goes the other way: the ST sends a
+  byte naming each port while the adapter's USB console reports what
+  arrived, so between them they name the socket.
 
 ## Proving it without an ST
 

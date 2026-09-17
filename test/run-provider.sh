@@ -35,8 +35,8 @@ node harness/server.js "$FIFO" --test &
 hatari_own $!
 hatari_boot VIEWTEST.TOS
 
-hatari_wait "XPAD-DONE" 60
+hatari_wait_verdict "XPAD-DONE" 60 "the viewer ran to completion"
 
-hatari_expect "provider COMpad v" "a resident provider owns the cookie"
+hatari_expect "provider COMpad $(cat version.txt)" "a resident provider owns the cookie"
 hatari_expect "buttons  00000218" "the held pattern reached the consumer"
 hatari_verdict "a resident provider is on the cookie jar" "provider FAILED"

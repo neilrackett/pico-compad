@@ -41,6 +41,25 @@ export const XPAD = {
   THUMBL: 0x00008000, THUMBR: 0x00010000,
 };
 
+// The frame envelope, from docs/protocol.md. One place on the JS side,
+// so a decoder cannot disagree with the encoders below.
+export const SYNC = 0xa5;
+export const FRAME_LEN = { 0x0: 12, 0x1: 5, 0xf: 7 };
+
+/** XOR of bytes 0..n-2, which every frame type carries as its last byte. */
+export function checksum(f, n) {
+  let x = 0;
+  for (let i = 0; i < n - 1; i++) x ^= f[i];
+  return x;
+}
+
+/** Names of the buttons held in a mask, by value, so bit order in the
+ *  table above does not matter. Positions rather than letters: see the
+ *  trap at the top of this file. */
+export function buttonNames(mask) {
+  return Object.keys(XPAD).filter((k) => mask & XPAD[k]);
+}
+
 export const XPAD_TYPE_XBOX = 3;
 export const XPAD_CAP_ANALOG = 0x0001;
 
@@ -114,7 +133,7 @@ export function toCompadState(state) {
 /** COMpad state frame (type 0x0), 12 bytes. See docs/protocol.md. */
 export function stateFrame(pad, s) {
   const f = new Uint8Array(12);
-  f[0] = 0xa5;
+  f[0] = SYNC;
   f[1] = ((pad & 3) << 4) | 0x0;
   f[2] = s.buttons & 0xff;
   f[3] = (s.buttons >>> 8) & 0xff;
@@ -125,23 +144,19 @@ export function stateFrame(pad, s) {
   f[8] = s.ry & 0xff;
   f[9] = s.lt & 0xff;
   f[10] = s.rt & 0xff;
-  let x = 0;
-  for (let i = 0; i <= 10; i++) x ^= f[i];
-  f[11] = x;
+  f[11] = checksum(f, 12);
   return f;
 }
 
 /** COMpad descriptor frame (type 0xF), 7 bytes. */
 export function descriptorFrame(pad, type, flags, caps) {
   const f = new Uint8Array(7);
-  f[0] = 0xa5;
+  f[0] = SYNC;
   f[1] = ((pad & 3) << 4) | 0xf;
   f[2] = type;
   f[3] = flags;
   f[4] = (caps >>> 8) & 0xff;
   f[5] = caps & 0xff;
-  let x = 0;
-  for (let i = 0; i <= 5; i++) x ^= f[i];
-  f[6] = x;
+  f[6] = checksum(f, 7);
   return f;
 }

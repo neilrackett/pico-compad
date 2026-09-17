@@ -19,18 +19,8 @@
 #define COMPAD_UART_TX 0
 #define COMPAD_UART_RX 1
 
-/*
- * 19200, which is the fastest Rsconf offers: its table counts down from
- * the fastest, so the ST provider asks for speed code 0. One pad at
- * 50 Hz is 31% of this link against 63% of a 9600 one.
- *
- * Both ends must agree. If a marginal cable makes the link flaky, drop
- * this to 9600 and BAUD_19200 to 1 in target/atarist/src/compad.c.
- *
- * 38400 is the next step up and needs more than a constant: it is not
- * in Rsconf's table, so it waits on the private MFP handler.
- */
-#define COMPAD_BAUD 19200
+/* The line rate is COMPAD_BAUD in target/atarist/src/protocol.h, the
+ * one header both ends compile, so it is not repeated here. */
 
 /*
  * Optional, and absent by construction rather than by #ifdef.
@@ -67,18 +57,14 @@
 #define COMPAD_DESCRIPTOR_EVERY 10 /* five times a second        */
 #define COMPAD_KEEPALIVE_EVERY 12  /* about every 250 ms         */
 
-/*
- * How often to re-ask whether anything is bonded, in ticks, and only
- * while no pad is connected.
- *
- * Asking once at startup is not enough: the link key database is not
- * reliably readable by the time on_init_complete runs, so the answer
- * taken there can be a false negative and the LED then claims to be
- * looking for a new pad when it is waiting for a known one. Measured on
- * hardware, not reasoned about. Re-asking once a second costs a
- * fiftieth of asking every tick and cannot get stuck on a stale no.
- */
-#define COMPAD_BOND_RESCAN 50
+#define COMPAD_TICKS_PER_SEC (1000 / COMPAD_TICK_MS)
+
+/* How often to re-ask whether anything is bonded, while no pad is
+ * connected. The events that change the answer mark it due instead of
+ * answering it, so there is one path and it is this one. Cheap: the
+ * BLE count is a cached integer and the Classic walk is a few dozen
+ * XIP reads. */
+#define COMPAD_BOND_RESCAN COMPAD_TICKS_PER_SEC
 
 /* Blink periods in ticks. They only have to be obviously different
  * from each other, per docs/roadmap.md: plain on and off, no fade. */

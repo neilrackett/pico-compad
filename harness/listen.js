@@ -18,7 +18,9 @@
 // to about +/-5.5V and TTL parts do not survive it.
 
 import fs from 'node:fs';
-import { execFileSync } from 'node:child_process';
+
+import { openSerial } from './serial.js';
+import { buttonNames, checksum, SYNC, FRAME_LEN } from './xpadmap.js';
 
 const port = process.argv[2];
 const baud = Number(process.argv[3] ?? 19200);
@@ -28,39 +30,7 @@ if (!port) {
   process.exit(2);
 }
 
-const fd = fs.openSync(port,
-  fs.constants.O_RDONLY | fs.constants.O_NOCTTY | fs.constants.O_NONBLOCK);
-
-// After the open, never before. macOS resets a port when the last fd
-// closes, so an stty that runs first is undone the moment it exits and
-// the reader then gets the default 9600. wire.js says the same thing
-// and I still did it the wrong way round here: the symptom is a stream
-// that looks like plausible garbage rather than an obvious failure.
-execFileSync('stty', [
-  '-f', port, String(baud),
-  'cs8', '-cstopb', '-parenb', '-crtscts',
-  'raw', '-echo', '-hupcl',
-]);
-
-// Mirrors target/atarist/src/protocol.h. Kept short deliberately: this
-// is a diagnostic, and a decoder that shares the ST's code would need
-// the ST's code to build on a host.
-const SYNC = 0xa5;
-const LEN = { 0x0: 12, 0x1: 5, 0xf: 7 };
-
-// Positions, not letters. Bits 4 to 7 are south, east, north and west,
-// and the kernel aliases XPAD_X to north and XPAD_Y to west, which is
-// the reverse of the legend printed on an Xbox pad. Labelling these
-// "A B X Y" in bit order therefore tells somebody holding a controller
-// that they pressed Y when they pressed X, at precisely the moment they
-// are checking the mapping. On an Xbox pad: south is A, east is B,
-// north is Y, west is X.
-const NAMES = [
-  'UP', 'DOWN', 'LEFT', 'RIGHT',
-  'SOUTH', 'EAST', 'NORTH', 'WEST',
-  'LB', 'RB', 'LT', 'RT',
-  'SELECT', 'START', 'MODE', 'THUMBL', 'THUMBR',
-];
+const fd = openSerial(port, baud);
 
 let buf = [];
 let bytes = 0, frames = 0, bad = 0;
@@ -79,7 +49,7 @@ function describe(f) {
     ? f[2] | (f[3] << 8) | (f[4] << 16)
     : f[2] | (f[3] << 8);
 
-  const held = NAMES.filter((_, i) => bits & (1 << i)).join(' ') || '-';
+  const held = buttonNames(bits).join(' ') || '-';
 
   if (type === 0x1) return `pad ${pad}  compact  ${held}`;
 
@@ -98,7 +68,7 @@ function feed(b) {
   }
 
   if (buf.length === 1) {
-    const len = LEN[b & 0x0f];
+    const len = FRAME_LEN[b & 0x0f];
     if (!len || (b >> 6) !== 0) {           // unknown type, or a version we do not speak
       buf = b === SYNC ? [b] : [];
       return;
@@ -109,14 +79,13 @@ function feed(b) {
 
   buf.push(b);
 
-  const want = LEN[buf[1] & 0x0f];
+  const want = FRAME_LEN[buf[1] & 0x0f];
   if (buf.length < want) return;
 
-  const sum = buf.slice(0, want - 1).reduce((x, v) => x ^ v, 0);
   const frame = buf;
   buf = [];
 
-  if (sum !== frame[want - 1]) { bad++; return; }
+  if (checksum(frame, want) !== frame[want - 1]) { bad++; return; }
 
   frames++;
   const line = describe(frame);
@@ -153,7 +122,7 @@ setInterval(() => {
 setInterval(() => {
   process.stderr.write(
     `\r${bytes} bytes, ${frames} frames, ${bad} bad checksum   `);
-}, 1000).unref?.();
+}, 1000);
 
 process.on('SIGINT', () => {
   console.log(`\n\n${bytes} bytes, ${frames} frames, ${bad} bad checksum`);

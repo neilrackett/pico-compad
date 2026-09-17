@@ -82,14 +82,12 @@ Booting, the Hatari flag lore, the cleanup trap and the verdict polling
 live there, so each runner is only its own setup and assertions. Add a
 new one by copying the shortest, `run-decode.sh`.
 
-`make dist` gathers the three things that go onto hardware: the UF2,
-`COMPAD.PRG` for the ST's AUTO folder, and `XPADVIEW.TOS` to watch the
-result. It copies rather than builds, because the two halves need
-toolchains that must not run in the same place, and a missing file
-names the command that makes it. Only those three: the other four ST
-binaries are test programs Hatari drives, and shipping them next to the
-ones you copy onto a real machine invites running CPDTEST.TOS on
-hardware and wondering why nothing happens.
+`make dist` gathers everything that goes onto hardware and prints what
+each piece is for. The list lives in the Makefile's `DIST_FILES` and
+nowhere else: prose that repeated it disagreed with it three ways in
+one afternoon. It copies rather than builds, because the two halves
+need toolchains that must not run in the same place, and a missing
+file names the command that makes it.
 
 `make firmware` is a cross build and deliberately not part of `make
 test`, the same way `st` is not: it needs CMake and arm-none-eabi-gcc,
@@ -145,14 +143,9 @@ sender outrun a slowed ST.
 Phase 3 works on hardware: a Bluetooth controller through a Pico W and
 a MAX3232 into a Mega STE's Modem 1, read back by `XPADVIEW.TOS`.
 
-Three things cost an evening of bring-up and are worth knowing before
-debugging anything similar. The adapter sends nothing at all when no pad
-is connected, so an idle adapter and an absent one are indistinguishable
-from the ST. The Mega STE's MFP port is **Modem 1**, not Serial 2 as
-hardware.md used to claim. And a MAX3232 module may name its TTL pins
-for the device you attach rather than for itself, in which case `TXD`
-takes the Pico's transmit; wired the other way the link still works
-inbound, which looks like a broken wire rather than a swapped pair.
+Three things cost an evening of bring-up and none of them were in the
+code; docs/roadmap.md's phase 3 note lists them. Read it before
+debugging anything similar.
 
 Phases 0 to 2 pass under emulation. Phase 0: the Node harness writes
 fixed state frames into a FIFO, Hatari presents them as RS-232, and
@@ -171,13 +164,7 @@ And a real Bluetooth controller has been driven through
 `harness/pad.html` into the viewer by hand, which is the half no
 automation can cover.
 
-Phase 3 exists in `rp/` and builds, but has never run: no Pico flashed,
-no adapter built. Phase 4, rumble, is not started.
-
-Still all under emulation, though: no gamepad has reached real ST
-hardware, because no adapter has been built. `make test-wire` is the
-one test that touches anything physical, and it measures a USB serial
-loopback rather than an ST.
+Phase 4, rumble, is not started.
 
 Serial timing under Hatari stays meaningless: framing, sync recovery
 and checksums are proven there, baud and latency are not. `test-wire`'s

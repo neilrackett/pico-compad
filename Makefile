@@ -65,46 +65,47 @@ FW_INC = -I lib/xpad/src \
 
 # Everything you flash or install, in one place.
 #
-# Four, not seven. PIPECHK.TOS is a Hatari test program and also the
-# right first thing to run on real hardware: it prints raw hex of
-# whatever reaches AUX, so bytes appearing at all prove the orientation,
-# the level shifter and the baud before framing enters into it. The
-# other three ST binaries are only ever driven by Hatari, and shipping
-# them beside the ones you copy onto a real machine is how somebody ends
-# up running CPDTEST.TOS on hardware and wondering why nothing happens.
+# This variable is the manifest. Nothing else in the repo should count
+# or list these: the target prints what it made and where each piece
+# goes, and prose that repeats the list has already disagreed with it
+# three ways in one afternoon. Each entry is source, purpose, and the
+# command that builds it if it is missing.
+#
+# Only the ones that go onto hardware. The remaining ST binaries in
+# target/atarist/build are test programs that Hatari drives, and
+# shipping them beside the ones you copy onto a real machine is how
+# somebody ends up running CPDTEST.TOS on hardware and wondering why
+# nothing happens.
 #
 # This copies rather than builds, because the two halves need different
 # toolchains that must not run in the same place: the firmware wants
 # CMake and arm-none-eabi-gcc on the host, the ST side wants the
-# container. A missing file names the command that makes it.
+# container.
 DIST = dist
+ST_BUILD = STCMD_NO_TTY=1 stcmd make st
+
+define DIST_FILES
+rp/build/compad.uf2|flash: hold BOOTSEL, plug in, copy it across|make firmware
+target/atarist/build/COMPAD.PRG|install: into the ST's AUTO folder|$(ST_BUILD)
+target/atarist/build/XPADVIEW.TOS|run it to watch the pad|$(ST_BUILD)
+target/atarist/build/PIPECHK.TOS|run it first: prints raw bytes off the wire|$(ST_BUILD)
+target/atarist/build/SENDTEST.TOS|the other direction: the ST transmitting|$(ST_BUILD)
+endef
+export DIST_FILES
 
 # No order-only prerequisite on the directory: it would share its name
 # with this target and make would call that circular.
 dist:
 	@mkdir -p $(DIST)
-	@missing=0; \
-	for f in rp/build/compad.uf2:"make firmware" \
-	         target/atarist/build/COMPAD.PRG:"STCMD_NO_TTY=1 stcmd make st" \
-	         target/atarist/build/XPADVIEW.TOS:"STCMD_NO_TTY=1 stcmd make st" \
-	         target/atarist/build/PIPECHK.TOS:"STCMD_NO_TTY=1 stcmd make st" \
-	         target/atarist/build/SENDTEST.TOS:"STCMD_NO_TTY=1 stcmd make st"; do \
-		src=$${f%%:*}; how=$${f#*:}; \
-		if [ -f "$$src" ]; then \
-			cp "$$src" $(DIST)/; \
-		else \
+	@echo "$$DIST_FILES" | while IFS='|' read -r src what how; do \
+		[ -n "$$src" ] || continue; \
+		if [ ! -f "$$src" ]; then \
 			echo "missing $$src, build it with: $$how"; \
-			missing=1; \
+			exit 1; \
 		fi; \
-	done; \
-	[ $$missing -eq 0 ] || exit 1
-	@echo
-	@echo "$(DIST)/compad.uf2      flash: hold BOOTSEL, plug in, copy it across"
-	@echo "$(DIST)/COMPAD.PRG      install: into the ST's AUTO folder"
-	@echo "$(DIST)/XPADVIEW.TOS    run it to watch the pad"
-	@echo "$(DIST)/PIPECHK.TOS     run it first: prints raw bytes off the wire"
-	@echo "$(DIST)/SENDTEST.TOS    the other direction: the ST transmitting"
-
+		cp "$$src" $(DIST)/; \
+		printf "%-24s %s\n" "$(DIST)/$${src##*/}" "$$what"; \
+	done || exit 1
 
 # The adapter firmware. Everything it needs is in lib/, so this wants
 # nothing installed but CMake and arm-none-eabi-gcc, and it never runs
@@ -150,11 +151,8 @@ simulator:
 tos:
 	@. test/tos.sh && tos_find && echo "TOS: $$TOS"
 
-# One version, in one file, the way md-net and md-doom do it.
-COMPAD_VERSION := $(shell cat version.txt 2>/dev/null || echo v0.0.0)
-
 st:
-	$(MAKE) -C target/atarist COMPAD_VERSION=$(COMPAD_VERSION)
+	$(MAKE) -C target/atarist
 
 $(BUILD):
 	@mkdir -p $(BUILD)

@@ -2,81 +2,64 @@
 /* SPDX-FileCopyrightText: 2026 Neil Rackett */
 
 /*
- * Transmit test: prove the ST can get bytes out of a serial port.
+ * Transmit test: prove the ST can get bytes out of a serial port, and
+ * back in again.
  *
  * Bring-up only. Everything else here tests the adapter talking to the
  * ST, which is the hard direction to diagnose: if nothing arrives you
  * cannot tell a dead wire from a wrong socket from a silent adapter.
- * This does the opposite and much easier thing. The ST sends a pattern,
- * the adapter's USB console says what it received, and between them
- * they name the socket.
+ * This does the opposite and much easier thing. The ST sends, the
+ * adapter's USB console says what it received, and between them they
+ * name the socket.
  *
- * Each port sends its own byte, so the adapter's console names the
- * socket rather than leaving you to correlate two screens by eye: 0x66
- * for the MFP, 0x77 for SCC channel B, 0x99 for channel A, chosen to
- * match the Bconmap device numbers. All three alternate bits enough to
- * be legible on a scope, and a baud mismatch shows up as something
- * other than the byte that was sent.
+ * Each port sends its own byte, matching its Bconmap device number so
+ * the adapter's console names the socket rather than leaving you to
+ * correlate two screens by eye: 0x66 for the MFP, 0x77 for SCC channel
+ * B, 0x99 for channel A.
  *
- * Tries every Bconmap device in turn, because on a Mega STE the rear
- * panel labels are not a reliable guide to which chip is behind them.
+ * It also counts what comes back, which makes it a loopback test for
+ * the ST itself. Short pins 2 and 3 on the ST's own socket, with
+ * nothing else attached, and a working port reports roughly as many
+ * bytes received as sent. A port that sends but never receives has its
+ * receive path broken or disabled, which is a fault in the machine and
+ * not in any adapter.
  *
  *   SENDTEST.TOS         cycle through the ports until a key is pressed
- *
- * It counts what comes back as well as what it sends, which turns it
- * into a loopback test for the ST itself. Short pins 2 and 3 on the
- * ST's own socket, with nothing else attached, and a port that works
- * should report roughly as many bytes received as sent. A port that
- * sends but never receives has its receive path broken or disabled,
- * and that is a fault in the machine rather than in any adapter.
  */
 
 #include <mint/osbind.h>
 #include <stdint.h>
 #include <stdio.h>
 
-#define BAUD_19200 0
-#define UCR_8N1 0x88
+#include "stport.h"
 
-#define BCONMAP_MFP 6
-#define BCONMAP_SCC_B 7
-#define BCONMAP_SCC_A 9
-#define TOS_WITH_BCONMAP 0x0200
+#define TICKS_PER_PORT 150 /* ~3 s of Vsync at 50 Hz */
 
-#define BURST 64        /* bytes per burst, about 33 ms at 19200 */
-#define TICKS_PER_PORT 150 /* ~3 s of Vsync at 50 Hz             */
+/*
+ * Bcostat goes false as soon as the MFP's transmit register is full,
+ * which is after a byte or two, so a burst that stops at the first
+ * not-ready sends a couple of bytes per vsync: about a hundred a
+ * second, not the wire's nineteen hundred. That is still plenty to
+ * name a socket, and it keeps a dead port from wedging the loop the
+ * way a blocking write would, so it is left that way deliberately.
+ */
+#define BURST 64
 
-static unsigned short tos_version;
-
-/* 0x4f2 is below 0x800, where the ST bus errors in user mode. */
-static long read_tos_version(void)
-{
-    char *sysbase = *(char **)0x4f2L;
-
-    tos_version = *(unsigned short *)(sysbase + 2);
-
-    return 0;
-}
-
+/* Send one port's byte for a while, on whatever device 1 is mapped to
+ * now, and count what comes back. The byte is derived from the device
+ * number here, once, so every path sends the byte the header promises. */
 static void blast(int dev, const char *name)
 {
+    uint8_t mark = (uint8_t)((dev << 4) | dev);
     long ticks, sent = 0, got = 0, wrong = 0;
-    uint8_t mark = (dev < 0) ? 0x55 : (uint8_t)((dev << 4) | dev);
 
-    if (dev >= 0)
-        Bconmap(dev);
-
-    Rsconf(BAUD_19200, 0, UCR_8N1, -1, -1, -1);
-
-    printf("\r\ndevice %d, %-22s sending %02x ", dev, name, mark);
+    printf("\r\n%-28s sending %02x ", name, mark);
     fflush(stdout);
 
     for (ticks = 0; ticks < TICKS_PER_PORT; ticks++)
     {
         int i;
 
-        /* Bcostat tells us there is room, so a dead port cannot wedge
-         * this the way a blocking write would. */
         for (i = 0; i < BURST && Bcostat(1); i++)
         {
             Bconout(1, mark);
@@ -105,7 +88,7 @@ static void blast(int dev, const char *name)
     printf(" sent %ld, back %ld", sent, got);
 
     if (wrong)
-        printf(", %ld not 0x55", wrong);
+        printf(", %ld not %02x", wrong, mark);
 
     printf("\r\n");
     fflush(stdout);
@@ -113,35 +96,37 @@ static void blast(int dev, const char *name)
 
 int main(void)
 {
-    long was = -1;
-
     printf("COMpad transmit test\r\n");
     printf("watch the adapter's USB console for what arrives\r\n");
 
-    Supexec(read_tos_version);
-
-    if (tos_version < TOS_WITH_BCONMAP)
+    if (!stport_has_bconmap())
     {
-        /* One port, and no way to ask for another. */
-        printf("TOS %x: no Bconmap, so the MFP is all there is\r\n",
-               tos_version);
+        /* One port, and no way to ask for another. Said in a branch
+         * rather than folded into the table, because that is the
+         * fact: this TOS cannot be asked. */
+        printf("no Bconmap on this TOS, so the MFP is all there is\r\n");
+        stport_configure();
 
         while (!Bconstat(2))
-            blast(-1, "the only serial port");
+            blast(BCONMAP_MFP, stports[0].name);
     }
     else
     {
-        was = Bconmap(BCONMAP_MFP);
+        long was = Bconmap(-1); /* remember it without changing it */
+        unsigned i;
 
-        while (!Bconstat(2))
+        for (i = 0; !Bconstat(2); i = (i + 1) % STPORT_COUNT)
         {
-            blast(BCONMAP_MFP, "MFP, ST compatible");
-            if (Bconstat(2))
-                break;
-            blast(BCONMAP_SCC_B, "SCC channel B");
-            if (Bconstat(2))
-                break;
-            blast(BCONMAP_SCC_A, "SCC channel A, LAN");
+            /* A machine without this port leaves the mapping alone, and
+             * blasting anyway would send this port's byte out of the
+             * previous one, naming a socket that does not exist. */
+            if (!stport_select(stports[i].dev))
+            {
+                printf("\r\n%-28s not on this machine\r\n", stports[i].name);
+                continue;
+            }
+
+            blast(stports[i].dev, stports[i].name);
         }
 
         Bconmap(was);
