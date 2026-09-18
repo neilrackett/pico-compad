@@ -66,6 +66,18 @@
  * XIP reads. */
 #define COMPAD_BOND_RESCAN COMPAD_TICKS_PER_SEC
 
+/*
+ * Rumble. xpad's request area carries magnitudes and no duration, so a
+ * consumer that sets them means "until I set something else", while
+ * Bluepad32's play_dual_rumble wants a duration. So the firmware arms
+ * a slightly longer burst than the interval it re-arms at: the motor
+ * never gaps, and if the ST stops asking, or is switched off mid
+ * rumble, the pad falls silent on its own within one burst rather than
+ * buzzing for ever.
+ */
+#define COMPAD_RUMBLE_MS 250
+#define COMPAD_RUMBLE_REARM (200 / COMPAD_TICK_MS)
+
 /* Blink periods in ticks. They only have to be obviously different
  * from each other, per docs/roadmap.md: plain on and off, no fade. */
 #define COMPAD_BLINK_FAST 5  /* 100 ms: looking for a new pad    */

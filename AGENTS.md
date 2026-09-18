@@ -164,7 +164,9 @@ And a real Bluetooth controller has been driven through
 `harness/pad.html` into the viewer by hand, which is the half no
 automation can cover.
 
-Phase 4, rumble, is not started.
+Phase 4, rumble and finding the port by ping, is written and passes
+under emulation, but no pad has buzzed and no port has been found on
+real hardware. Do not describe that half as proven.
 
 Serial timing under Hatari stays meaningless: framing, sync recovery
 and checksums are proven there, baud and latency are not. `test-wire`'s

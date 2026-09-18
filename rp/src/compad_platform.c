@@ -48,8 +48,23 @@ typedef struct
 static COMPAD_SLOT slots[COMPAD_PADS];
 static btstack_timer_source_t tick_timer;
 
+/*
+ * The host to adapter direction. The ST pings to find which serial
+ * port the adapter is on, and sends rumble requests when a consumer
+ * writes xpad's request area.
+ */
+static COMPAD_DECODER rx_dec;
+
+/* What the ST last asked each pad to do, and how long since it was
+ * armed. Kept per pad so a re-arm does not need the frame again. */
+static struct
+{
+    uint8_t lo, hi;
+    uint16_t age;
+} rumble[COMPAD_PADS];
+
 /* Bytes seen on the wire's receive side, and when they were last
- * reported. Nothing consumes them yet: request frames are phase 4. */
+ * reported. */
 static uint32_t rx_bytes;
 static uint8_t rx_last[8];
 static uint8_t rx_have;
@@ -90,13 +105,44 @@ static void send_state(uint8_t pad)
     slots[pad].since_send = 0;
 }
 
+/* Whether this pad's driver can actually drive its motors. */
+static bool pad_can_rumble(int idx)
+{
+    uni_hid_device_t *d = uni_hid_device_get_instance_for_idx(idx);
+
+    return d && d->report_parser.play_dual_rumble != NULL;
+}
+
+/*
+ * caps is adapter scoped, per docs/protocol.md, so it says what the
+ * adapter honours rather than what one pad can do. Rumble is claimed
+ * only while a pad that can actually rumble is connected: xpad's rule
+ * is never to claim a capability that is not honoured, and a pad with
+ * no motors would make it a lie. The ST takes the newest value, so it
+ * follows what is plugged in.
+ */
+static uint16_t caps_now(void)
+{
+    uint16_t caps = XPAD_CAP_ANALOG;
+    int i;
+
+    for (i = 0; i < COMPAD_PADS; i++)
+    {
+        if (slots[i].present && pad_can_rumble(i))
+            return (uint16_t)(caps | XPAD_CAP_RUMBLE);
+    }
+
+    return caps;
+}
+
 static void send_descriptor(uint8_t pad)
 {
     uint8_t f[CE_DESC_LEN];
 
-    /* No caps claimed. XPAD_CAP_RUMBLE would be a promise this does not
-     * keep yet: request frames are phase 4. */
-    compad_descriptor_frame(pad, XPAD_TYPE_GAMEPAD, 0, 0, f);
+    /* Every pad here arrives over Bluetooth and reports axes. */
+    compad_descriptor_frame(pad, XPAD_TYPE_GAMEPAD,
+                            XPAD_PAD_ANALOG | XPAD_PAD_WIRELESS, caps_now(),
+                            f);
     wire_write(f, CE_DESC_LEN);
 
     slots[pad].since_descriptor = 0;
@@ -249,6 +295,107 @@ static void button_tick(void)
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* What the ST asks for                                                */
+/* ------------------------------------------------------------------ */
+
+/* Arm a pad's motors for one burst. Silent for a pad that cannot. */
+static void arm_rumble(int idx)
+{
+    uni_hid_device_t *d = uni_hid_device_get_instance_for_idx(idx);
+
+    if (!d || !d->report_parser.play_dual_rumble)
+        return;
+
+    /*
+     * Bluepad32 calls them weak and strong; xpad calls them high and
+     * low frequency, which is the same pair the other way round: the
+     * small fast motor is the weak one.
+     */
+    d->report_parser.play_dual_rumble(d, 0, COMPAD_RUMBLE_MS,
+                                      rumble[idx].hi, rumble[idx].lo);
+    rumble[idx].age = 0;
+}
+
+/*
+ * A ping asks "is a COMpad on this port?", and the answer is a
+ * descriptor, which is a frame the ST already decodes and which
+ * carries the pad type and caps it wants anyway. No new reply type,
+ * and noise cannot fake a valid checksum.
+ *
+ * It answers whether or not a pad is connected: that is the whole
+ * point of it. With nothing paired the adapter is otherwise silent,
+ * and an idle adapter would be indistinguishable from an absent one,
+ * which is exactly how an evening got lost during bring-up.
+ */
+static void answer_ping(void)
+{
+    int i, replied = 0;
+
+    for (i = 0; i < COMPAD_PADS; i++)
+    {
+        if (slots[i].present)
+        {
+            send_descriptor((uint8_t)i);
+            replied = 1;
+        }
+    }
+
+    if (!replied)
+    {
+        uint8_t f[CE_DESC_LEN];
+
+        /* Here, but with nothing plugged in: XPAD_TYPE_NONE says so,
+         * and xpad_connected() on the ST counts it as no pad. */
+        compad_descriptor_frame(0, XPAD_TYPE_NONE, 0, caps_now(), f);
+        wire_write(f, CE_DESC_LEN);
+    }
+}
+
+static void handle_request(const uint8_t *f)
+{
+    uint8_t pad = COMPAD_HDR_PAD(f[1]);
+
+    switch (COMPAD_HDR_TYPE(f[1]))
+    {
+    case COMPAD_TYPE_PING:
+        answer_ping();
+        break;
+
+    case COMPAD_TYPE_REQUEST:
+        if (pad >= COMPAD_PADS)
+            return;
+
+        rumble[pad].lo = COMPAD_REQ_RUMBLE_LO(f);
+        rumble[pad].hi = COMPAD_REQ_RUMBLE_HI(f);
+
+        /* Arm at once, whether that starts it or stops it: a consumer
+         * writing zeroes means stop, and waiting for the burst to
+         * expire would leave the pad buzzing after the trigger. */
+        arm_rumble(pad);
+        break;
+
+    default:
+        break;
+    }
+}
+
+/* Keep a held rumble held. xpad's request area has no duration, so
+ * "until replaced" is expressed by re-arming just inside the burst. */
+static void rumble_tick(void)
+{
+    int i;
+
+    for (i = 0; i < COMPAD_PADS; i++)
+    {
+        if (!slots[i].present || (!rumble[i].lo && !rumble[i].hi))
+            continue;
+
+        if (++rumble[i].age >= COMPAD_RUMBLE_REARM)
+            arm_rumble(i);
+    }
+}
+
 /*
  * Say what arrives on GP1.
  *
@@ -273,6 +420,9 @@ static void rx_tick(void)
 
         if (rx_have < sizeof(rx_last))
             rx_last[rx_have++] = b;
+
+        if (compad_feed_req(&rx_dec, b))
+            handle_request(rx_dec.buf);
     }
 
     /* Once a second, and only when there is something to say, so a
@@ -354,6 +504,7 @@ static void tick(btstack_timer_source_t *ts)
 
     led_tick();
     button_tick();
+    rumble_tick();
 }
 
 /* ------------------------------------------------------------------ */
@@ -366,6 +517,8 @@ static void compad_platform_init(int argc, const char **argv)
     ARG_UNUSED(argv);
 
     memset(slots, 0, sizeof(slots));
+    memset(rumble, 0, sizeof(rumble));
+    compad_init(&rx_dec);
 }
 
 static void compad_on_init_complete(void)
@@ -435,6 +588,7 @@ static void compad_on_device_disconnected(uni_hid_device_t *d)
     send_state((uint8_t)idx);
 
     memset(&slots[idx], 0, sizeof(slots[idx]));
+    memset(&rumble[idx], 0, sizeof(rumble[idx]));
 }
 
 static uni_error_t compad_on_device_ready(uni_hid_device_t *d)

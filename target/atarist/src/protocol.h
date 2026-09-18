@@ -21,8 +21,8 @@
 
 #include <stdint.h>
 
-#define COMPAD_SYNC 0xA5     /* adapter to host frames     */
-#define COMPAD_SYNC_REQ 0x5A /* host to adapter, not ours  */
+#define COMPAD_SYNC 0xA5     /* adapter to host            */
+#define COMPAD_SYNC_REQ 0x5A /* host to adapter            */
 
 #define COMPAD_PROTO_VERSION 0
 
@@ -34,10 +34,17 @@
  */
 #define COMPAD_BAUD 19200
 
+/* Adapter to host, under COMPAD_SYNC. */
 #define COMPAD_TYPE_STATE 0x0
 #define COMPAD_TYPE_COMPACT 0x1
-#define COMPAD_TYPE_REQUEST 0xE
 #define COMPAD_TYPE_DESCRIPTOR 0xF
+
+/* Host to adapter, under COMPAD_SYNC_REQ. */
+#define COMPAD_TYPE_PING 0x2
+#define COMPAD_TYPE_REQUEST 0xE
+
+#define COMPAD_PING_LEN 3
+#define COMPAD_REQUEST_LEN 8
 
 #define COMPAD_MAX_FRAME 12
 
@@ -53,8 +60,8 @@
 #define COMPAD_HDR_PAD(h) ((uint8_t)(((h) >> 4) & 3))
 #define COMPAD_HDR_TYPE(h) ((uint8_t)((h) & 0x0f))
 
-/* Frame length for a type, or 0 for one this side never receives:
- * requests travel the other way under their own sync byte. */
+/* Length of an adapter-to-host frame, or 0 for a type that direction
+ * does not carry. */
 static COMPAD_UNUSED uint8_t compad_frame_len(uint8_t type)
 {
     switch (type)
@@ -65,6 +72,21 @@ static COMPAD_UNUSED uint8_t compad_frame_len(uint8_t type)
         return 5;
     case COMPAD_TYPE_DESCRIPTOR:
         return 7;
+    default:
+        return 0;
+    }
+}
+
+/* Length of a host-to-adapter frame. The adapter decodes these; the
+ * ST only sends them, so nothing on that side needs this. */
+static COMPAD_UNUSED uint8_t compad_req_len(uint8_t type)
+{
+    switch (type)
+    {
+    case COMPAD_TYPE_PING:
+        return COMPAD_PING_LEN;
+    case COMPAD_TYPE_REQUEST:
+        return COMPAD_REQUEST_LEN;
     default:
         return 0;
     }
@@ -88,11 +110,12 @@ static COMPAD_UNUSED void compad_init(COMPAD_DECODER *d)
  * checksum-verified frame sits in d->buf, otherwise 0. The frame is
  * valid until the next call.
  */
-static COMPAD_UNUSED uint8_t compad_feed(COMPAD_DECODER *d, uint8_t b)
+static COMPAD_UNUSED uint8_t compad_feed_sync(COMPAD_DECODER *d, uint8_t b,
+                                              uint8_t sync)
 {
     if (d->have == 0)
     {
-        if (b != COMPAD_SYNC)
+        if (b != sync)
             return 0;
 
         d->buf[0] = b;
@@ -102,14 +125,15 @@ static COMPAD_UNUSED uint8_t compad_feed(COMPAD_DECODER *d, uint8_t b)
 
     if (d->have == 1)
     {
-        d->need = compad_frame_len(COMPAD_HDR_TYPE(b));
+        d->need = (sync == COMPAD_SYNC) ? compad_frame_len(COMPAD_HDR_TYPE(b))
+                                        : compad_req_len(COMPAD_HDR_TYPE(b));
 
         if (d->need == 0 || COMPAD_HDR_VERSION(b) != COMPAD_PROTO_VERSION)
         {
             /* Unknown type or a future version: drop it and hunt. The
              * byte may itself be the real sync of the next frame, so
              * treat it freshly rather than discarding it. */
-            d->have = (b == COMPAD_SYNC) ? 1 : 0;
+            d->have = (b == sync) ? 1 : 0;
             return 0;
         }
 
@@ -142,6 +166,71 @@ static COMPAD_UNUSED uint8_t compad_feed(COMPAD_DECODER *d, uint8_t b)
      * survivable, and the hunt resumes with the next byte. */
     return 0;
 }
+
+/*
+ * Feed one byte of the adapter-to-host direction. The sync byte is a
+ * constant here so the compiler folds the branch above away, which
+ * matters: the ST runs this per byte from a timer interrupt.
+ */
+static COMPAD_UNUSED uint8_t compad_feed(COMPAD_DECODER *d, uint8_t b)
+{
+    return compad_feed_sync(d, b, COMPAD_SYNC);
+}
+
+/* Feed one byte of the host-to-adapter direction. */
+static COMPAD_UNUSED uint8_t compad_feed_req(COMPAD_DECODER *d, uint8_t b)
+{
+    return compad_feed_sync(d, b, COMPAD_SYNC_REQ);
+}
+
+/* ------------------------------------------------------------------ */
+/* Building host-to-adapter frames. The ST sends these; the harness    */
+/* and the tests build them too, so they live with the contract.       */
+/* ------------------------------------------------------------------ */
+
+static COMPAD_UNUSED uint8_t compad_xor(const uint8_t *f, uint8_t len)
+{
+    uint8_t x = 0;
+    uint8_t i;
+
+    for (i = 0; i + 1 < len; i++)
+        x ^= f[i];
+
+    return x;
+}
+
+/* Writes COMPAD_PING_LEN bytes: "are you there?" */
+static COMPAD_UNUSED void compad_ping_frame(uint8_t *f)
+{
+    f[0] = COMPAD_SYNC_REQ;
+    f[1] = COMPAD_TYPE_PING;
+    f[2] = compad_xor(f, COMPAD_PING_LEN);
+}
+
+/*
+ * Writes COMPAD_REQUEST_LEN bytes. duration is in units of 10 ms, and
+ * 0 means "until replaced", which is what xpad's request area implies:
+ * it carries magnitudes and no duration, so a consumer that sets them
+ * expects them to hold until it sets something else.
+ */
+static COMPAD_UNUSED void compad_request_frame(uint8_t pad, uint8_t lo,
+                                               uint8_t hi, uint8_t duration,
+                                               uint8_t led, uint8_t *f)
+{
+    f[0] = COMPAD_SYNC_REQ;
+    f[1] = (uint8_t)(((pad & 3) << 4) | COMPAD_TYPE_REQUEST);
+    f[2] = lo;
+    f[3] = hi;
+    f[4] = duration;
+    f[5] = led;
+    f[6] = 0; /* reserved */
+    f[7] = compad_xor(f, COMPAD_REQUEST_LEN);
+}
+
+#define COMPAD_REQ_RUMBLE_LO(f) ((f)[2])
+#define COMPAD_REQ_RUMBLE_HI(f) ((f)[3])
+#define COMPAD_REQ_DURATION(f) ((f)[4])
+#define COMPAD_REQ_LED(f) ((f)[5])
 
 /* Field accessors for a delivered frame. Byte-wide reassembly, so the
  * consumer's endianness never enters into it. */

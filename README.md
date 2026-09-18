@@ -23,7 +23,8 @@ through the cookie jar with axes, triggers and pad type intact.
 **Phase 3 works on real hardware.** A Bluetooth controller paired to a
 Pico W, through a MAX3232 into a Mega STE's Modem 1, reaches an `XPAD`
 block that `XPADVIEW.TOS` reads back with buttons, sticks and triggers
-intact. Phase 4, rumble, is next: see
+intact. Phase 4, rumble and port detection by ping, is written and
+passes under emulation but has not been tried on hardware: see
 [docs/roadmap.md](docs/roadmap.md).
 
 To build one, see [docs/wiring.md](docs/wiring.md). A MAX3232 is the

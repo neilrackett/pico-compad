@@ -19,9 +19,11 @@
  *   COMPAD.PRG        install and stay resident (AUTO folder friendly)
  *   COMPAD.PRG -t     run the self test and exit, installing nothing
  *
- * Limits, phase 1:
- *   - receive only: no request frames back yet, so no rumble and no
- *     XPAD_CAP_RUMBLE claimed
+ * Limits:
+ *   - rumble goes back over the request frame direction, but only from
+ *     the MFP port: the transmit path writes the USART directly rather
+ *     than calling the BIOS from an interrupt, and XPAD_CAP_RUMBLE is
+ *     masked out when this provider cannot send
  *   - caps and pad types arrive from descriptor frames when the
  *     adapter sends them; until then a pad that has produced a state
  *     frame reports XPAD_TYPE_GAMEPAD
@@ -89,9 +91,103 @@
  * changes.
  */
 
+/*
+ * The MFP's USART, written directly, which is the one place here that
+ * goes round TOS.
+ *
+ * Requests are sent from the etv handler, in interrupt context, and
+ * this file's whole design is that nothing calls the BIOS from there:
+ * Bconout is not reentrant and the timer can land inside it. A byte
+ * into the data register when the transmitter says it is empty is
+ * safe, and it is all we need.
+ *
+ * It only works on the MFP, so a provider that ended up on one of a
+ * Mega STE's SCC ports cannot send, and says so by masking
+ * XPAD_CAP_RUMBLE out of what it publishes. That is the honest way
+ * round: never claim a capability that is not honoured.
+ */
+#define MFP_TSR (*(volatile uint8_t *)0xFFFFFA2DL)
+#define MFP_UDR (*(volatile uint8_t *)0xFFFFFA2FL)
+#define MFP_TSR_EMPTY 0x80
+
+#define TXBUF 32 /* four request frames, which is more than enough */
+
+static uint8_t txbuf[TXBUF];
+static uint8_t txhead, txtail;
+static int can_transmit;
+
 static XPAD block;
+static XPAD_REQ req;
 static COMPAD_DECODER dec;
 static _IOREC *aux;
+
+/* What was last sent, so an unchanged pad is not re-sent. */
+static uint8_t sent_rumble[XPAD_MAX_PADS][2];
+static uint8_t seq_seen;
+
+static void tx_push(const uint8_t *b, uint8_t n)
+{
+    uint8_t i;
+
+    for (i = 0; i < n; i++)
+    {
+        uint8_t next = (uint8_t)((txtail + 1) % TXBUF);
+
+        if (next == txhead)
+            return; /* full: drop, the consumer will ask again */
+
+        txbuf[txtail] = b[i];
+        txtail = next;
+    }
+}
+
+/*
+ * One byte per tick, when the transmitter is free. At ~200 Hz that is
+ * 200 bytes a second, which an eight byte request frame clears in
+ * 40 ms: far inside what a rumble needs, and it cannot stall the
+ * interrupt the way waiting for the register would.
+ */
+static void tx_tick(void)
+{
+    if (txhead == txtail || !(MFP_TSR & MFP_TSR_EMPTY))
+        return;
+
+    MFP_UDR = txbuf[txhead];
+    txhead = (uint8_t)((txhead + 1) % TXBUF);
+}
+
+/*
+ * Has a consumer asked for something? xpad says to bump seq after
+ * writing the request area, so this is a byte compare on the common
+ * path and only walks the pads when something actually changed.
+ */
+static void requests_tick(void)
+{
+    int i;
+
+    if (!can_transmit || req.seq == seq_seen)
+        return;
+
+    seq_seen = req.seq;
+
+    for (i = 0; i < XPAD_MAX_PADS; i++)
+    {
+        uint8_t lo = req.rumble[i][0];
+        uint8_t hi = req.rumble[i][1];
+        uint8_t f[COMPAD_REQUEST_LEN];
+
+        if (lo == sent_rumble[i][0] && hi == sent_rumble[i][1])
+            continue;
+
+        sent_rumble[i][0] = lo;
+        sent_rumble[i][1] = hi;
+
+        /* Duration 0: hold it until asked for something else, which is
+         * what a request area with no duration field means. */
+        compad_request_frame((uint8_t)i, lo, hi, 0, req.led[i], f);
+        tx_push(f, COMPAD_REQUEST_LEN);
+    }
+}
 
 /* Latest complete state per pad, applied to the whole back buffer on
  * every commit so no slot ever exposes two-commits-old data. */
@@ -150,6 +246,11 @@ static void apply_frame(const uint8_t *f)
         p->type = COMPAD_DESC_TYPE(f);
         p->flags = COMPAD_DESC_FLAGS(f);
         caps_shadow = COMPAD_DESC_CAPS(f);
+
+        /* The adapter may honour rumble, but if this provider cannot
+         * transmit there is no way to ask it to. */
+        if (!can_transmit)
+            caps_shadow &= (uint16_t)~XPAD_CAP_RUMBLE;
         break;
 
     default:
@@ -223,6 +324,9 @@ void compad_tick(void)
 
     rec->ibufhd = rd;
 
+    requests_tick();
+    tx_tick();
+
     if (dirty)
         publish_shadow();
 }
@@ -238,7 +342,7 @@ static void init_block(void)
 
     /* Four slots from the start: the wire protocol addresses four pads
      * and a slot that has seen no frames honestly reports NONE. */
-    xpad_init(&block, XPAD_MAX_PADS, 0, PROVIDER, 0);
+    xpad_init(&block, XPAD_MAX_PADS, 0, PROVIDER, &req);
 
     /* Both buffers start as the (empty) shadow. */
     for (i = 0; i < 2; i++)
@@ -386,21 +490,131 @@ static int selftest(void)
  * than one serial port, so anything older is left alone: it has only
  * the MFP to offer anyway.
  */
-static void claim_mfp(void)
+/*
+ * Ping a port and wait briefly for any valid frame back.
+ *
+ * The adapter answers a ping with a descriptor whether or not a pad is
+ * connected, so this finds it even with the controller switched off,
+ * which passive listening cannot: the adapter is silent until a pad
+ * is paired.
+ *
+ * Deliberately short. It runs at boot from AUTO, and a machine with
+ * something else on a port should not have its morning held up.
+ */
+#define PING_WAIT_TICKS 8 /* ~160 ms at 50 Hz, several adapter ticks */
+
+static int port_answers(void)
 {
-    long previous;
+    COMPAD_DECODER probe;
+    uint8_t f[COMPAD_PING_LEN];
+    long t;
 
-    if (tos_version() < TOS_WITH_BCONMAP)
-        return;
+    compad_init(&probe);
 
-    previous = Bconmap(BCONMAP_MFP);
+    /* Drop anything already waiting, so a previous port's traffic
+     * cannot be mistaken for this one answering. */
+    while (Bconstat(1))
+        (void)Bconin(1);
 
-    if (previous > 0 && previous != BCONMAP_MFP)
-        printf("BIOS device 1 was on %ld, claimed the MFP.\r\n", previous);
+    compad_ping_frame(f);
+
+    for (t = 0; t < COMPAD_PING_LEN; t++)
+        Bconout(1, f[t]);
+
+    for (t = 0; t < PING_WAIT_TICKS; t++)
+    {
+        while (Bconstat(1))
+        {
+            if (compad_feed(&probe, (uint8_t)Bconin(1)))
+                return 1; /* a whole frame, checksum and all */
+        }
+
+        Vsync();
+    }
+
+    return 0;
+}
+
+/*
+ * Find the adapter, and leave device 1 pointed at it.
+ *
+ * Ping each port in turn, MFP first because that is where the adapter
+ * is meant to be and because stopping there means the other ports are
+ * never touched at all. That matters: probing is not read only. It
+ * remaps device 1 and reconfigures the port's line settings, so a
+ * modem mid-call or a serial printer would notice. Settings are put
+ * back on every port that does not answer.
+ *
+ * Nothing answers, or this TOS has no Bconmap: fall back to the MFP,
+ * which is the recommended and often only port. So forgetting to plug
+ * the adapter in, or switching it on later, still works.
+ *
+ * Returns the device it settled on, and whether that was by answer.
+ */
+static int found_by_ping;
+
+/* Modem 1 rather than "the MFP": what is printed on the case. */
+static const char *port_name(int dev)
+{
+    unsigned i;
+
+    if (dev == BCONMAP_MFP)
+        return "Modem 1";
+
+    for (i = 0; i < STPORT_COUNT; i++)
+    {
+        if (stports[i].dev == dev)
+            return stports[i].name;
+    }
+
+    return "an unknown port";
+}
+
+static int claim_port(void)
+{
+    unsigned i;
+
+    if (stport_has_bconmap())
+    {
+        for (i = 0; i < STPORT_COUNT; i++)
+        {
+            long previous, settings;
+
+            /* A machine without this port leaves the mapping alone,
+             * and probing it would really be probing the last one. */
+            previous = Bconmap(stports[i].dev);
+
+            if (previous <= 0)
+                continue;
+
+            settings = Rsconf(-1, -1, -1, -1, -1, -1);
+            stport_configure();
+
+            if (port_answers())
+            {
+                found_by_ping = 1;
+                return stports[i].dev;
+            }
+
+            /* Put this port back as it was before moving on. */
+            Rsconf(-1, -1, (int)((settings >> 24) & 0xff),
+                   (int)((settings >> 16) & 0xff),
+                   (int)((settings >> 8) & 0xff), (int)(settings & 0xff));
+            Bconmap(previous);
+        }
+
+        Bconmap(BCONMAP_MFP);
+    }
+
+    stport_configure();
+
+    return BCONMAP_MFP;
 }
 
 static int install(void)
 {
+    int port;
+
     printf(BANNER);
 
     if (xpad_find())
@@ -412,8 +626,8 @@ static int install(void)
 
     init_block();
 
-    claim_mfp();
-    stport_configure();
+    port = claim_port();
+    can_transmit = (port == BCONMAP_MFP);
     aux = (_IOREC *)Iorec(0);
 
     if (!aux)
@@ -440,7 +654,13 @@ static int install(void)
     compad_etv_chain = (void (*)(void))Setexc(ETV_TIMER_VEC, (void (*)())-1L);
     (void)Setexc(ETV_TIMER_VEC, compad_etv_entry);
 
-    printf("Xpad provider listening on Modem 1.\r\n");
+    /* Say which port and how it was chosen. A ping that finds nothing
+     * falls back silently otherwise, and "it is on Modem 1 because I
+     * looked" is a different fact from "because I gave up". */
+    printf("Xpad provider listening on %s.\r\n", port_name(port));
+
+    if (!found_by_ping)
+        printf("No adapter answered, so this is the default.\r\n");
 
     return 1;
 }

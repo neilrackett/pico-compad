@@ -13,8 +13,10 @@ Pico W reaches an `XPAD` block on a real Mega STE over a real wire, and
 `XPADVIEW.TOS` shows it moving. That is the exit criteria met, and it is
 the first thing in this project to have run anywhere but an emulator.
 
-Phase 4, rumble, is next and needs the request frame direction, which
-nothing implements yet.
+**Phase 4 is written but unproven on hardware.** Rumble and the ping
+that finds which serial port the adapter is on, both built on the
+host-to-adapter direction that nothing implemented before. It passes
+under emulation; no pad has buzzed yet.
 
 Every phase here targets the Atari ST family. Other platforms are not
 on this roadmap at all: if one happens, it arrives as a new directory
@@ -246,8 +248,31 @@ LED only, for what is link management rather than pad state. The type
 `0xE` request frame keeps a spare byte at offset 6 if a remote trigger
 is ever wanted, as an addition rather than the mechanism.
 
-## Phase 4: rumble
+## Phase 4: rumble, and finding the port
 
-Request frames from ST to adapter. Consumer writes `req->rumble[0][0]`
-and `[0][1]`, bumps `seq`, provider notices and sends a type `0xE`
-frame. Claim `XPAD_CAP_RUMBLE` only once this actually works.
+Both halves of the host-to-adapter direction, which nothing implemented
+before: the firmware never read a byte and the provider never sent one.
+
+**Rumble.** A consumer writes `req->rumble[n][0]` and `[1]`, bumps
+`seq`, the provider notices and sends a type `0xE` frame, and the
+adapter drives the motors. `XPAD_CAP_RUMBLE` is claimed only while a
+pad that can actually rumble is connected, and the provider masks it
+out entirely when it cannot transmit.
+
+The provider sends from the `etv_timer` handler, so it writes the MFP's
+data register directly rather than calling `Bconout`: the BIOS is not
+reentrant and this file's design is that nothing calls it from an
+interrupt. One byte per tick when the transmitter is free, which clears
+an eight byte frame in 40 ms. That path is MFP only, which is why a
+provider on one of a Mega STE's SCC ports stops claiming rumble.
+
+**Finding the port.** `COMPAD.PRG` pings each serial port at install,
+MFP first, and keeps the one that answers. Nothing answers, or the
+machine has no `Bconmap`, and it falls back to the MFP, so forgetting
+to plug the adapter in or switching it on later still works. The
+install message says which port and whether that was by answer or by
+default.
+
+Probing is not read-only, so the settings of any port that does not
+answer are put back, and stopping at the first answer means the common
+case never touches the others at all.

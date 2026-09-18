@@ -160,6 +160,66 @@ int main(void)
     check(run(&d, stream, 13, 0, 0) == 1,
           "a sync byte in the header slot restarts the frame");
 
+    /* ---------------------------------------------------------- */
+    /* Host to adapter: the other direction, and its own sync byte  */
+    /* ---------------------------------------------------------- */
+
+    {
+        COMPAD_DECODER r;
+        uint8_t q[COMPAD_REQUEST_LEN];
+        uint8_t got, i;
+
+        compad_init(&r);
+
+        /* A ping round trips through the decoder the adapter uses. */
+        compad_ping_frame(q);
+        check(q[0] == COMPAD_SYNC_REQ, "a ping carries the request sync");
+        check(COMPAD_HDR_TYPE(q[1]) == COMPAD_TYPE_PING, "and the ping type");
+
+        got = 0;
+        for (i = 0; i < COMPAD_PING_LEN; i++)
+            got = compad_feed_req(&r, q[i]);
+        check(got == COMPAD_PING_LEN, "the adapter's decoder accepts it");
+
+        /* A request carries the magnitudes and survives. */
+        compad_request_frame(2, 200, 100, 0, 3, q);
+        got = 0;
+        for (i = 0; i < COMPAD_REQUEST_LEN; i++)
+            got = compad_feed_req(&r, q[i]);
+        check(got == COMPAD_REQUEST_LEN, "a request frame decodes");
+        check(COMPAD_HDR_PAD(r.buf[1]) == 2, "the pad index survives");
+        check(COMPAD_REQ_RUMBLE_LO(r.buf) == 200 &&
+                  COMPAD_REQ_RUMBLE_HI(r.buf) == 100,
+              "both motors survive");
+        check(COMPAD_REQ_LED(r.buf) == 3, "and the led index");
+
+        /* A flipped bit is caught here as it is the other way. */
+        compad_request_frame(0, 1, 2, 0, 0, q);
+        q[2] ^= 0x01;
+        got = 0;
+        for (i = 0; i < COMPAD_REQUEST_LEN; i++)
+            got = compad_feed_req(&r, q[i]);
+        check(got == 0, "a corrupted request fails its checksum");
+
+        /*
+         * The two directions must not read each other's frames. An
+         * adapter that accepted 0xA5 would hear its own echo, and a
+         * provider that accepted 0x5A would hear its own requests on
+         * a wire that loops back.
+         */
+        compad_ping_frame(q);
+        compad_init(&r);
+        got = 0;
+        for (i = 0; i < COMPAD_PING_LEN; i++)
+            got = compad_feed(&r, q[i]);
+        check(got == 0, "the host direction ignores request frames");
+
+        check(compad_frame_len(COMPAD_TYPE_PING) == 0,
+              "and does not know the ping length");
+        check(compad_req_len(COMPAD_TYPE_STATE) == 0,
+              "nor the adapter direction a state frame");
+    }
+
     printf("\n%s\n", failures ? "FAILED" : "all checks passed");
 
     return failures ? 1 : 0;

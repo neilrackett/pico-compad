@@ -39,6 +39,7 @@ Frame types:
 |-------|---------|--------|-----|
 | `0x0` | State   | 12     | Normal per-pad state |
 | `0x1` | Compact | 5      | Buttons only, for slow links |
+| `0x2` | Ping    | 3      | Host to adapter: are you there? |
 | `0xE` | Request | 8      | Host to adapter: rumble, LED |
 | `0xF` | Descriptor | 7   | Pad type, flags, caps on attach |
 
@@ -101,8 +102,8 @@ when the machine came up or whether it has been reset since. Repeating
 is 7 bytes at a time, under 4% of a 9600 link, though worth noting it
 is then the larger half of what flows while nobody is touching the pad,
 since state frames stop when nothing changes. It keeps the descriptor
-as stateless as the state frames. A consumer asking for one
-over the back channel would be the tidier answer and waits on phase 4.
+as stateless as the state frames. A consumer can also ask for one: that
+is what a ping is, below.
 
 **`caps` is adapter-scoped, not per-pad.** The descriptor's header
 carries a pad index because `type` and `flags` are per-pad, but `caps`
@@ -116,6 +117,34 @@ Until a descriptor arrives, a consumer that has seen state frames
 should report a generic gamepad rather than nothing: `compad.c` does this, and it is
 why a missing descriptor shows up as the wrong pad type rather than an
 absent pad.
+
+## Ping frame (type `0x2`, host to adapter)
+
+```
+0   sync        0x5A
+1   header
+2   checksum    XOR of bytes 0..1
+```
+
+"Is a COMpad on this port?" The adapter answers with a **descriptor**
+frame per connected pad, or a single descriptor for pad 0 with
+`XPAD_TYPE_NONE` when nothing is paired. No reply type of its own: the
+host already decodes descriptors, and they carry the pad type and caps
+it wants anyway. A reply has to pass its checksum, so noise cannot
+fake one.
+
+It answers **whether or not a pad is connected**, which is the whole
+point. An adapter with nothing paired sends nothing at all, so passive
+listening cannot tell it from an absent one. That is what makes a ping
+usable for finding which serial port the adapter is on: three ports at
+a few hundred milliseconds each, against seconds of listening that
+still cannot distinguish silence from absence.
+
+A host that pings is transmitting onto a port it has not identified
+yet, which is not a read-only act: it must claim the port and set its
+line rate, and something else may be using it. Probe the recommended
+port first and stop on the first answer, and put the line settings back
+on any port that does not reply.
 
 ## Request frame (type `0xE`, host to adapter)
 
@@ -132,6 +161,14 @@ absent pad.
 
 Xbox trigger impulse motors have no home in xpad v1, so only the two
 main motors are driven.
+
+`duration` of 0 means "until replaced", which is what xpad's request
+area implies: it carries magnitudes and no duration, so a consumer that
+sets them expects them to hold until it sets something else. An adapter
+whose own rumble call wants a duration should arm a burst slightly
+longer than the interval it re-arms at, so the motor never gaps and a
+host that stops asking, or is switched off mid rumble, leaves the pad
+falling silent on its own rather than buzzing indefinitely.
 
 ## Timing budget
 
