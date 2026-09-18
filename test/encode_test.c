@@ -67,6 +67,138 @@ static uint32_t mapped(uint8_t dpad, uint16_t buttons, uint8_t misc)
     return s.buttons;
 }
 
+/*
+ * What fits in a tick.
+ *
+ * Four pads at 50 Hz is the one load this link cannot carry, and the
+ * scheduler is what makes it degrade rather than break. None of it can
+ * be seen on a bench: a starved pad looks like a pad nobody pressed.
+ * So it is checked here, where the budget is a number and the rotation
+ * is observable.
+ */
+
+#define TEST_PADS 4
+#define TEST_BUDGET 38 /* 19200 8N1, 20 ms: (19200/10)/50 */
+
+static int plan_count(const uint8_t *plan, uint8_t bit)
+{
+    int i, n = 0;
+
+    for (i = 0; i < TEST_PADS; i++)
+        if (plan[i] & bit)
+            n++;
+
+    return n;
+}
+
+static void schedule_checks(void)
+{
+    uint8_t want[TEST_PADS], plan[TEST_PADS];
+    uint8_t next = 0;
+    int served[TEST_PADS];
+    int gap[TEST_PADS];
+    int worst = 0;
+    int i, t;
+
+    /* The budget has to be the real one, or every number below is
+     * about a link this project does not have. */
+    check(TEST_BUDGET == (COMPAD_BAUD / 10) / (1000 / 20),
+          "the tick budget is the link's own byte rate");
+    check(TEST_BUDGET / CE_STATE_LEN == 3,
+          "three state frames fit in a tick, and four do not");
+
+    /* Nothing wanted, nothing sent, and the rotation stays put. */
+    memset(want, 0, sizeof(want));
+    ce_schedule(want, TEST_PADS, TEST_BUDGET, &next, plan);
+    check(plan_count(plan, CE_SEND_STATE) == 0, "an idle link sends nothing");
+    check(next == 0, "and leaves the rotation alone");
+
+    /* Two pads is the ordinary case and must be untouched by any of
+     * this: both go, in order, every tick. */
+    want[0] = want[1] = CE_SEND_STATE;
+    want[2] = want[3] = 0;
+    ce_schedule(want, TEST_PADS, TEST_BUDGET, &next, plan);
+    check(plan[0] == CE_SEND_STATE && plan[1] == CE_SEND_STATE,
+          "two pads both send in the same tick");
+    check(next == 0, "with the rotation still at its natural order");
+
+    /* Four is the case that does not fit: three go, the fourth is
+     * deferred, and it is the one the next tick starts from. */
+    for (i = 0; i < TEST_PADS; i++)
+        want[i] = CE_SEND_STATE;
+    next = 0;
+    ce_schedule(want, TEST_PADS, TEST_BUDGET, &next, plan);
+    check(plan_count(plan, CE_SEND_STATE) == 3, "four pads send three");
+    check(plan[3] == 0, "and the fourth is the one held back");
+    check(next == 3, "which is where the next tick starts");
+
+    ce_schedule(want, TEST_PADS, TEST_BUDGET, &next, plan);
+    check(plan[3] == CE_SEND_STATE, "so the held-back pad goes first");
+
+    /*
+     * The property that matters, and the only one a bench could not
+     * tell you: under permanent overload nobody starves. Four pads all
+     * changing every tick for four seconds, and no pad may wait more
+     * than one tick longer than its turn.
+     */
+    for (i = 0; i < TEST_PADS; i++)
+    {
+        served[i] = 0;
+        gap[i] = 0;
+    }
+
+    next = 0;
+    for (t = 0; t < 200; t++)
+    {
+        for (i = 0; i < TEST_PADS; i++)
+            want[i] = CE_SEND_STATE;
+
+        ce_schedule(want, TEST_PADS, TEST_BUDGET, &next, plan);
+
+        for (i = 0; i < TEST_PADS; i++)
+        {
+            if (plan[i] & CE_SEND_STATE)
+            {
+                served[i]++;
+                gap[i] = 0;
+            }
+            else if (++gap[i] > worst)
+                worst = gap[i];
+        }
+    }
+
+    check(worst <= 1, "no pad ever waits more than one tick for its turn");
+
+    for (i = 0; i < TEST_PADS; i++)
+        if (served[i] < 140)
+            break;
+
+    check(i == TEST_PADS, "and every pad still gets at least 35 Hz");
+
+    /*
+     * A descriptor is 7 bytes and comes out of the same budget, so a
+     * tick carrying one has room for two state frames, not three.
+     */
+    for (i = 0; i < TEST_PADS; i++)
+        want[i] = CE_SEND_STATE;
+    want[0] |= CE_SEND_DESCRIPTOR;
+    next = 0;
+    ce_schedule(want, TEST_PADS, TEST_BUDGET, &next, plan);
+    check(plan[0] == (CE_SEND_DESCRIPTOR | CE_SEND_STATE),
+          "a descriptor and a state frame share a tick");
+    check(plan_count(plan, CE_SEND_STATE) == 2,
+          "and the descriptor costs the tick a state frame");
+
+    /* A pad that wants only a descriptor never takes the rotation's
+     * place: it is not what the budget runs out on. */
+    memset(want, 0, sizeof(want));
+    want[1] = CE_SEND_DESCRIPTOR;
+    next = 0;
+    ce_schedule(want, TEST_PADS, TEST_BUDGET, &next, plan);
+    check(plan[1] == CE_SEND_DESCRIPTOR && next == 0,
+          "a descriptor alone does not move the rotation");
+}
+
 int main(void)
 {
     COMPAD_DECODER d;
@@ -226,6 +358,8 @@ int main(void)
     s.rt = 0;
     s.buttons = XPAD_UP;
     check(compad_state_differs(&s, &zero), "so is one button");
+
+    schedule_checks();
 
     printf("\n%s\n", failures ? "FAILED" : "all checks passed");
 

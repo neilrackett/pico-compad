@@ -48,6 +48,10 @@ typedef struct
 static COMPAD_SLOT slots[COMPAD_PADS];
 static btstack_timer_source_t tick_timer;
 
+/* Which pad the tick's byte budget ran out on, and therefore which one
+ * goes first next time. */
+static uint8_t next_pad;
+
 /*
  * The host to adapter direction. The ST pings to find which serial
  * port the adapter is on, and sends rumble requests when a consumer
@@ -82,16 +86,62 @@ static uint16_t held_ticks;
 /* ------------------------------------------------------------------ */
 
 /*
- * Blocking, and deliberately so. A state frame is 12 bytes, the FIFO
- * holds 32, and at 9600 baud a full frame is 12.5 ms against a 20 ms
- * tick, so this only ever waits when the link is already saturated,
- * which is the case docs/protocol.md's send-on-change policy exists to
- * avoid. Queueing instead would add a buffer whose only job is to hide
- * that, and a queue on a link this slow is latency you never get back.
+ * Frames queue here rather than going out under a spin loop.
+ *
+ * uart_write_blocking was called from the run loop's timer, which was
+ * fine for one pad and not for three: a 12 byte frame is 6.25 ms at
+ * 19200, so three pads moving at once spent 18.75 ms of a 20 ms tick
+ * waiting on hardware that had already taken the bytes. Bluetooth and
+ * the receive drain got whatever was left, and since the RX FIFO holds
+ * less than one tick of this link, what was left mattered.
+ *
+ * Draining after each write keeps the wire timing identical to the
+ * blocking version at any load the FIFO absorbs, which is everything
+ * below three pads: the first byte leaves at the same instant and the
+ * UART clocks out the rest on its own. What changes is only that the
+ * CPU stops watching it happen.
  */
+static uint8_t txbuf[COMPAD_TXBUF];
+static uint8_t txhead, txtail;
+static uint16_t tx_dropped;
+
+static uint8_t tx_used(void)
+{
+    return (uint8_t)((txtail + COMPAD_TXBUF - txhead) % COMPAD_TXBUF);
+}
+
+/* As far into the FIFO as it will take, never waiting for it. */
+static void tx_drain(void)
+{
+    while (txhead != txtail && uart_is_writable(COMPAD_UART))
+    {
+        uart_get_hw(COMPAD_UART)->dr = txbuf[txhead];
+        txhead = (uint8_t)((txhead + 1) % COMPAD_TXBUF);
+    }
+}
+
 static void wire_write(const uint8_t *f, uint8_t len)
 {
-    uart_write_blocking(COMPAD_UART, f, len);
+    uint8_t i;
+
+    tx_drain();
+
+    /* Whole frames or nothing. A truncated one is bytes the ST has to
+     * resync past, while a dropped one costs nothing: every frame is
+     * full state, so the next is complete and correct on its own. */
+    if (COMPAD_TXBUF - 1 - tx_used() < len)
+    {
+        tx_dropped++;
+        return;
+    }
+
+    for (i = 0; i < len; i++)
+    {
+        txbuf[txtail] = f[i];
+        txtail = (uint8_t)((txtail + 1) % COMPAD_TXBUF);
+    }
+
+    tx_drain();
 }
 
 static void send_state(uint8_t pad)
@@ -450,6 +500,16 @@ static void rx_tick(void)
              line);
         rx_have = 0;
     }
+
+    /* Only ever printed when it has happened, because it should not.
+     * A drop means the ring filled, which means the budget above let
+     * more out than the link carries: the number is the evidence, not
+     * a statistic. */
+    if (tx_dropped)
+    {
+        logi("compad: tx dropped %u frames\n", tx_dropped);
+        tx_dropped = 0;
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -465,6 +525,7 @@ static void rx_tick(void)
 static void tick(btstack_timer_source_t *ts)
 {
     int i;
+    uint8_t want[COMPAD_PADS], plan[COMPAD_PADS];
 
     /* Re-armed first. set_timer is relative to now, so re-arming after
      * the sends would make the period 20 ms plus however long they
@@ -478,27 +539,51 @@ static void tick(btstack_timer_source_t *ts)
      * 32 byte RX FIFO holds less than one tick of 19200, so draining
      * after them is exactly when bytes would be lost. */
     rx_tick();
+    tx_drain();
 
+    /*
+     * What each pad would send on an unlimited link.
+     *
+     * The counters advance for every pad, whatever the budget lets
+     * out: a keepalive the link had no room for is still due, and goes
+     * as soon as there is room. Saturating rather than wrapping,
+     * because a wrapped counter would read as "just sent" and hold the
+     * frame back further still.
+     */
     for (i = 0; i < COMPAD_PADS; i++)
     {
         COMPAD_SLOT *s = &slots[i];
 
+        want[i] = 0;
+
         if (!s->present)
             continue;
 
-        /* Neither counter can run away: both are reset below, in this
-         * same pass, well before a uint8_t could wrap. */
-        s->since_descriptor++;
-        s->since_send++;
+        if (s->since_descriptor < 255)
+            s->since_descriptor++;
+        if (s->since_send < 255)
+            s->since_send++;
 
         /* Repeated, not sent once: the provider discards the serial
          * ring when it installs, so a descriptor that arrived while
          * the ST was still booting is gone. */
         if (s->since_descriptor >= COMPAD_DESCRIPTOR_EVERY)
-            send_descriptor((uint8_t)i);
+            want[i] |= CE_SEND_DESCRIPTOR;
 
         if (compad_state_differs(&s->state, &s->sent) ||
             s->since_send >= COMPAD_KEEPALIVE_EVERY)
+            want[i] |= CE_SEND_STATE;
+    }
+
+    /* What the link can carry of it, and who goes first next time. */
+    ce_schedule(want, COMPAD_PADS, COMPAD_TX_BUDGET, &next_pad, plan);
+
+    for (i = 0; i < COMPAD_PADS; i++)
+    {
+        if (plan[i] & CE_SEND_DESCRIPTOR)
+            send_descriptor((uint8_t)i);
+
+        if (plan[i] & CE_SEND_STATE)
             send_state((uint8_t)i);
     }
 

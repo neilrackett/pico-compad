@@ -202,4 +202,79 @@ static COMPAD_UNUSED int compad_state_differs(const COMPAD_STATE *a, const COMPA
            a->rt != b->rt;
 }
 
+/* ------------------------------------------------------------------ */
+/* What fits in a tick                                                  */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The link is finite and four pads can want more of it than it has.
+ *
+ * A 12 byte state frame is 6.25 ms at 19200, so a 20 ms tick carries
+ * three of them and not four: four pads all moving at once want 125%
+ * of the link. Sending anyway does not make it faster, it makes the
+ * run loop late, which costs Bluetooth and the receive drain as well.
+ *
+ * So the tick spends a budget. What does not fit is not dropped, it is
+ * deferred, and the pad it happened to goes first next time, which is
+ * what stops a busy neighbour starving a quiet one. Every frame is
+ * full state, so a deferred pad is a tick behind rather than wrong:
+ * the same property that lets the decoder resynchronise after noise is
+ * what makes this safe.
+ *
+ * Here rather than in the platform file because it is logic, and logic
+ * in this header is tested on the host. Nothing about it needs a Pico,
+ * and starvation is precisely the kind of bug a bench cannot show you.
+ */
+#define CE_SEND_DESCRIPTOR 1
+#define CE_SEND_STATE 2
+
+/*
+ * want[] is what each pad would send on an unlimited link, as a mask
+ * of the two bits above. plan[] comes back as what the budget allows,
+ * and *next carries the rotation from one tick to the next.
+ */
+static COMPAD_UNUSED void ce_schedule(const uint8_t *want, uint8_t pads,
+                                      int budget, uint8_t *next,
+                                      uint8_t *plan)
+{
+    uint8_t start = *next % pads;
+    uint8_t n;
+    int cut = 0;
+
+    for (n = 0; n < pads; n++)
+        plan[n] = 0;
+
+    for (n = 0; n < pads; n++)
+    {
+        uint8_t i = (uint8_t)((start + n) % pads);
+
+        /* A descriptor that does not fit is simply not sent: the
+         * counter behind it keeps climbing and brings it back on the
+         * next tick, so it needs no place in the rotation. */
+        if ((want[i] & CE_SEND_DESCRIPTOR) && budget >= CE_DESC_LEN)
+        {
+            plan[i] |= CE_SEND_DESCRIPTOR;
+            budget -= CE_DESC_LEN;
+        }
+
+        if (want[i] & CE_SEND_STATE)
+        {
+            if (budget < CE_STATE_LEN)
+            {
+                *next = i;
+                cut = 1;
+                break;
+            }
+
+            plan[i] |= CE_SEND_STATE;
+            budget -= CE_STATE_LEN;
+        }
+    }
+
+    /* Everyone who wanted the link got it, so the rotation goes back
+     * to its natural order rather than drifting for no reason. */
+    if (!cut)
+        *next = 0;
+}
+
 #endif /* COMPAD_ENCODE_H */

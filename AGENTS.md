@@ -187,6 +187,13 @@ MFP through a level shifter.
   every frame is still full state, but an idle pad must not fill the
   link. Streaming unconditionally at 50 Hz is 63% of a 9600 link, and
   at that load any receiver that falls behind never catches up.
+- **Never write more in a tick than the link carries in one.** The
+  budget is in `config.h` and the rotation that spends it is
+  `ce_schedule()` in `encode.h`, tested on the host because starvation
+  is invisible on a bench: a starved pad looks like a pad nobody
+  pressed. Blocking the run loop past its own tick costs Bluetooth and
+  the receive drain, not just latency, because the RX FIFO holds less
+  than one tick of 19200.
 - xpad's rules travel with it: single provider, chain any displaced
   handler, `Supexec` below `$800`, frozen button bits, and never claim
   a capability that is not honoured. See `xpad/AGENTS.md`.

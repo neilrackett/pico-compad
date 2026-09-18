@@ -59,6 +59,25 @@
 
 #define COMPAD_TICKS_PER_SEC (1000 / COMPAD_TICK_MS)
 
+/*
+ * What the link carries in one tick, and the queue that smooths it.
+ *
+ * 8N1 is ten bits a byte, so 19200 is 1920 bytes a second and a 20 ms
+ * tick is 38 of them. Three 12-byte state frames fit and four do not:
+ * four pads all moving at once want 48 bytes a tick, which is 125% of
+ * the link. So the tick spends a budget and remembers which pad it ran
+ * out on, and that pad goes first next time. Every frame is full
+ * state, so a pad that loses the race is a frame later, never wrong.
+ *
+ * The queue is there because the budget is larger than the UART's 32
+ * byte FIFO, not to hide a saturated link. Below three pads nothing
+ * ever queues: a frame goes straight into the FIFO and the ring stays
+ * empty. 128 bytes is several ticks of slack, which is far more than
+ * the budget can put in.
+ */
+#define COMPAD_TX_BUDGET ((COMPAD_BAUD / 10) / COMPAD_TICKS_PER_SEC)
+#define COMPAD_TXBUF 128
+
 /* How often to re-ask whether anything is bonded, while no pad is
  * connected. The events that change the answer mark it due instead of
  * answering it, so there is one path and it is this one. Cheap: the

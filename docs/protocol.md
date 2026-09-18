@@ -180,6 +180,7 @@ falling silent on its own rather than buzzing indefinitely.
 | 38400 | 3840 | 3.1 ms | 16% |
 
 Four pads at 50 Hz needs 2400 bytes/sec, which does not fit at 19200.
+See "When it does not fit" below for what the adapter does about it.
 
 **Send on change, plus a keepalive every 250 ms.** Still a full state
 frame, so the self-healing property holds. Gamepads are idle most of
@@ -207,6 +208,38 @@ drop to 9600 change that one line.
 38400 is the one that needs more than a constant. It is not in
 `Rsconf`'s table at all, so it means driving Timer D directly (prescale
 /4, count 1: 2457600 / 4 / 16 = 38400 exactly) from a private MFP
-handler. That is real work, and the timing table above says what it
-buys: four pads at 50 Hz need 2400 bytes/sec, which fits at 38400 and
-does not at 19200.
+handler. That is real work, machine-specific, and untestable under
+emulation, and the round-robin below buys most of what it would.
+
+## When it does not fit
+
+An adapter MUST NOT send more in a tick than the link carries in one.
+Sending anyway does not make the wire faster: it blocks the sender for
+longer than its own tick, which costs it whatever else the tick was
+for. On the Pico that is Bluetooth and the receive drain, and the RX
+FIFO holds less than one tick of 19200, so the cost is dropped input
+rather than merely late output.
+
+The budget is the link's byte rate divided by the tick rate: 38 bytes
+at 19200 on a 20 ms tick. Three state frames fit; four do not.
+
+What does not fit is **deferred, not dropped**, and the pad it happened
+to is the one the next tick starts from. So four pads under permanent
+load settle at three served per tick, no pad waiting more than one tick
+past its turn, and each one updating at about 37 Hz rather than 50.
+Nothing accumulates, because every frame is full state: a deferred pad
+sends a complete, correct frame when its turn comes, and the frame it
+skipped was never needed. This is the self-healing property doing a
+second job.
+
+Descriptors come out of the same budget and are simply skipped when
+they do not fit, because the repeat interval brings them back. They
+never take the rotation's place.
+
+A frame that cannot be queued at all is dropped whole, never
+truncated. A truncated frame is bytes the receiver has to resynchronise
+past; a dropped one costs a single update.
+
+None of this changes anything below three pads, which is every session
+anyone has actually run: one or two frames fit the UART's FIFO outright
+and the rotation never defers anything.
