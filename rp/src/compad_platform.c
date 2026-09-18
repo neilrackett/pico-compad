@@ -155,6 +155,28 @@ static void send_state(uint8_t pad)
     slots[pad].since_send = 0;
 }
 
+/*
+ * Buttons only, five bytes instead of twelve, sent when the tick is
+ * over budget and the axes have not moved.
+ *
+ * since_send is deliberately not reset. The keepalive's second job is
+ * self healing: a receiver that lost bytes to noise gets its axes back
+ * from a full state frame and from nothing else, so sustained button
+ * mashing must not be able to hold one off indefinitely. Leaving the
+ * counter alone means full state still goes out every 250 ms, and
+ * because ce_compact_ok() requires the axes to match what was last
+ * sent, nothing is lost in between.
+ */
+static void send_compact(uint8_t pad)
+{
+    uint8_t f[CE_COMPACT_LEN];
+
+    compad_compact_frame(pad, slots[pad].state.buttons, f);
+    wire_write(f, CE_COMPACT_LEN);
+
+    slots[pad].sent = slots[pad].state;
+}
+
 /* Whether this pad's driver can actually drive its motors. */
 static bool pad_can_rumble(int idx)
 {
@@ -570,9 +592,18 @@ static void tick(btstack_timer_source_t *ts)
         if (s->since_descriptor >= COMPAD_DESCRIPTOR_EVERY)
             want[i] |= CE_SEND_DESCRIPTOR;
 
-        if (compad_state_differs(&s->state, &s->sent) ||
-            s->since_send >= COMPAD_KEEPALIVE_EVERY)
+        if (s->since_send >= COMPAD_KEEPALIVE_EVERY)
+        {
+            /* A keepalive is full state or it is not a keepalive. */
             want[i] |= CE_SEND_STATE;
+        }
+        else if (compad_state_differs(&s->state, &s->sent))
+        {
+            want[i] |= CE_SEND_STATE;
+
+            if (ce_compact_ok(&s->state, &s->sent))
+                want[i] |= CE_SEND_COMPACT;
+        }
     }
 
     /* What the link can carry of it, and who goes first next time. */
@@ -585,6 +616,8 @@ static void tick(btstack_timer_source_t *ts)
 
         if (plan[i] & CE_SEND_STATE)
             send_state((uint8_t)i);
+        else if (plan[i] & CE_SEND_COMPACT)
+            send_compact((uint8_t)i);
     }
 
     led_tick();

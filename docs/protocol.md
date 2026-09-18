@@ -236,6 +236,29 @@ Descriptors come out of the same budget and are simply skipped when
 they do not fit, because the repeat interval brings them back. They
 never take the rotation's place.
 
+**Compact frames relieve a tick that is over budget**, and only then.
+Whether to use them is a property of the tick, not of a pad: if
+everything fits, nobody sends one, so one and two pads never see a
+compact frame at all. If it does not fit, every pad that can goes
+compact, which is usually enough that nothing needs deferring. Four
+pads pressing buttons cost 20 bytes instead of 48 and all four are
+served. Deciding per pad as the budget ran down would let the early
+ones spend it on full state and defer the last one anyway, which is
+the pad the shortfall was never about.
+
+A compact frame is only valid when the axes have not moved since the
+last frame this pad sent, because the receiver leaves its copy of them
+alone, **and** when no button above bit 15 is held. Sixteen bits is all
+it carries and the receiver assigns rather than merges, so a held
+`XPAD_THUMBR`, bit 16, would be cleared by every compact frame that
+passed: a button that releases itself while you hold it, rather than an
+update that arrives late.
+
+A compact frame does not restart the keepalive interval. The keepalive's
+second job is self healing, and a receiver that lost bytes to noise gets
+its axes back from a full state frame and from nothing else, so
+sustained button pressing must not be able to hold one off.
+
 A frame that cannot be queued at all is dropped whole, never
 truncated. A truncated frame is bytes the receiver has to resynchronise
 past; a dropped one costs a single update.

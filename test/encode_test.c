@@ -197,6 +197,102 @@ static void schedule_checks(void)
     ce_schedule(want, TEST_PADS, TEST_BUDGET, &next, plan);
     check(plan[1] == CE_SEND_DESCRIPTOR && next == 0,
           "a descriptor alone does not move the rotation");
+
+    /*
+     * Compact frames, which exist only to relieve a tick that is over
+     * budget. The promise made in docs/protocol.md is that one and two
+     * pads never see one, so that is the first thing checked.
+     */
+    memset(want, 0, sizeof(want));
+    want[0] = CE_SEND_STATE | CE_SEND_COMPACT;
+    next = 0;
+    ce_schedule(want, TEST_PADS, TEST_BUDGET, &next, plan);
+    check(plan[0] == CE_SEND_STATE, "one pad sends full state, never compact");
+
+    want[1] = CE_SEND_STATE | CE_SEND_COMPACT;
+    ce_schedule(want, TEST_PADS, TEST_BUDGET, &next, plan);
+    check(plan[0] == CE_SEND_STATE && plan[1] == CE_SEND_STATE,
+          "and so do two");
+
+    /* Four pads pressing buttons is the case it was built for: all
+     * four fit, and nothing is deferred. */
+    for (i = 0; i < TEST_PADS; i++)
+        want[i] = CE_SEND_STATE | CE_SEND_COMPACT;
+    next = 0;
+    ce_schedule(want, TEST_PADS, TEST_BUDGET, &next, plan);
+    check(plan_count(plan, CE_SEND_COMPACT) == 4, "four pads all go compact");
+    check(plan_count(plan, CE_SEND_STATE) == 0, "instead of full state");
+    check(next == 0, "and none of them is deferred");
+
+    /* A pad whose sticks moved cannot go compact, so it keeps its
+     * twelve bytes while the others give theirs up. */
+    want[2] = CE_SEND_STATE;
+    next = 0;
+    ce_schedule(want, TEST_PADS, TEST_BUDGET, &next, plan);
+    check(plan[2] == CE_SEND_STATE, "a pad that moved a stick sends state");
+    check(plan_count(plan, CE_SEND_COMPACT) == 3, "while the rest go compact");
+    check(next == 0, "and the tick still fits");
+
+    /* Nothing eligible is nothing gained: this is the old behaviour,
+     * unchanged, which is what four sticks in motion still gets. */
+    for (i = 0; i < TEST_PADS; i++)
+        want[i] = CE_SEND_STATE;
+    next = 0;
+    ce_schedule(want, TEST_PADS, TEST_BUDGET, &next, plan);
+    check(plan_count(plan, CE_SEND_STATE) == 3 && next == 3,
+          "four moving sticks still defer one, as before");
+}
+
+/*
+ * What may travel in a compact frame, and what may not.
+ *
+ * The receiver assigns the sixteen bits it carries over the whole
+ * button mask rather than merging them, so a held XPAD_THUMBR, bit 16,
+ * would be cleared by every compact frame that passed. That is not a
+ * dropped update, it is a button that releases itself while you are
+ * holding it, and it is the one thing about this frame type that could
+ * be silently wrong.
+ */
+static void compact_checks(void)
+{
+    COMPAD_DECODER d;
+    COMPAD_STATE now, sent;
+    uint8_t f[CE_COMPACT_LEN];
+    uint8_t got[16];
+
+    memset(&now, 0, sizeof(now));
+    memset(&sent, 0, sizeof(sent));
+
+    now.buttons = XPAD_SOUTH;
+    check(ce_compact_ok(&now, &sent), "a button press alone may go compact");
+
+    now.lx = 40;
+    check(!ce_compact_ok(&now, &sent), "a stick that moved may not");
+
+    now.lx = 0;
+    now.rt = 9;
+    check(!ce_compact_ok(&now, &sent), "nor a trigger");
+
+    now.rt = 0;
+    now.buttons = XPAD_THUMBR;
+    check(!ce_compact_ok(&now, &sent),
+          "nor a button above the sixteen bits it carries");
+
+    now.buttons = XPAD_SOUTH | XPAD_THUMBR;
+    check(!ce_compact_ok(&now, &sent),
+          "even alongside one that would have fitted");
+
+    /* And the frame itself, through the ST's own decoder. */
+    compad_init(&d);
+    compad_compact_frame(2, XPAD_SOUTH | XPAD_START, f);
+    check(round_trip(&d, f, CE_COMPACT_LEN, got) == CE_COMPACT_LEN,
+          "a compact frame decodes whole");
+    check(COMPAD_HDR_PAD(got[1]) == 2, "with its pad index intact");
+    check(COMPAD_HDR_TYPE(got[1]) == COMPAD_TYPE_COMPACT, "typed compact");
+    check(compad_compact_buttons(got) == (XPAD_SOUTH | XPAD_START),
+          "and the buttons the encoder put in it");
+    check(compad_frame_len(COMPAD_TYPE_COMPACT) == CE_COMPACT_LEN,
+          "the decoder and the encoder agree on its length");
 }
 
 int main(void)
@@ -360,6 +456,7 @@ int main(void)
     check(compad_state_differs(&s, &zero), "so is one button");
 
     schedule_checks();
+    compact_checks();
 
     printf("\n%s\n", failures ? "FAILED" : "all checks passed");
 

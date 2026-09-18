@@ -148,6 +148,7 @@ static COMPAD_UNUSED void compad_map(uint8_t dpad, uint16_t buttons, uint8_t mis
  * cannot do. encode_test.c checks them against it. */
 #define CE_STATE_LEN 12
 #define CE_DESC_LEN 7
+#define CE_COMPACT_LEN 5
 
 static COMPAD_UNUSED uint8_t ce_checksum(const uint8_t *f, uint8_t len)
 {
@@ -195,6 +196,38 @@ static COMPAD_UNUSED void compad_descriptor_frame(uint8_t pad, uint8_t type,
     f[6] = ce_checksum(f, CE_DESC_LEN);
 }
 
+/*
+ * Writes CE_COMPACT_LEN bytes: buttons and nothing else.
+ *
+ * Only ever valid when the axes have not moved, because the receiver
+ * leaves its copy of them alone, and only when no button above bit 15
+ * is held, because sixteen bits is all this carries and the receiver
+ * assigns rather than merges. XPAD_THUMBR is bit 16, so a held right
+ * stick click would be cleared by every compact frame that passed.
+ * ce_compact_ok() is that test and the only supported way to ask it.
+ */
+static COMPAD_UNUSED void compad_compact_frame(uint8_t pad, uint32_t buttons,
+                                               uint8_t *f)
+{
+    f[0] = COMPAD_SYNC;
+    f[1] = (uint8_t)(((pad & 3) << 4) | COMPAD_TYPE_COMPACT);
+    f[2] = (uint8_t)(buttons & 0xff);
+    f[3] = (uint8_t)((buttons >> 8) & 0xff);
+    f[4] = ce_checksum(f, CE_COMPACT_LEN);
+}
+
+/* Whether a compact frame would carry the whole difference. */
+static COMPAD_UNUSED int ce_compact_ok(const COMPAD_STATE *now,
+                                       const COMPAD_STATE *sent)
+{
+    if (now->buttons & ~(uint32_t)0xffff)
+        return 0;
+
+    return now->lx == sent->lx && now->ly == sent->ly &&
+           now->rx == sent->rx && now->ry == sent->ry &&
+           now->lt == sent->lt && now->rt == sent->rt;
+}
+
 static COMPAD_UNUSED int compad_state_differs(const COMPAD_STATE *a, const COMPAD_STATE *b)
 {
     return a->buttons != b->buttons || a->lx != b->lx || a->ly != b->ly ||
@@ -227,6 +260,7 @@ static COMPAD_UNUSED int compad_state_differs(const COMPAD_STATE *a, const COMPA
  */
 #define CE_SEND_DESCRIPTOR 1
 #define CE_SEND_STATE 2
+#define CE_SEND_COMPACT 4 /* set alongside STATE when one would do */
 
 /*
  * want[] is what each pad would send on an unlimited link, as a mask
@@ -239,10 +273,30 @@ static COMPAD_UNUSED void ce_schedule(const uint8_t *want, uint8_t pads,
 {
     uint8_t start = *next % pads;
     uint8_t n;
+    int demand = 0;
+    int squeeze;
     int cut = 0;
 
     for (n = 0; n < pads; n++)
+    {
         plan[n] = 0;
+
+        if (want[n] & CE_SEND_DESCRIPTOR)
+            demand += CE_DESC_LEN;
+        if (want[n] & CE_SEND_STATE)
+            demand += CE_STATE_LEN;
+    }
+
+    /*
+     * Compact frames are a property of the tick, not of a pad. Deciding
+     * per pad as the budget ran down would let the first pads spend it
+     * on full state and leave the last one deferred anyway, which is
+     * the pad the shortfall was never about. So: if everything fits,
+     * nobody goes compact, and one or two pads therefore never see a
+     * compact frame at all. If it does not fit, everyone who can goes
+     * compact, and usually nothing has to be deferred.
+     */
+    squeeze = demand > budget;
 
     for (n = 0; n < pads; n++)
     {
@@ -259,15 +313,18 @@ static COMPAD_UNUSED void ce_schedule(const uint8_t *want, uint8_t pads,
 
         if (want[i] & CE_SEND_STATE)
         {
-            if (budget < CE_STATE_LEN)
+            int compact = squeeze && (want[i] & CE_SEND_COMPACT);
+            int len = compact ? CE_COMPACT_LEN : CE_STATE_LEN;
+
+            if (budget < len)
             {
                 *next = i;
                 cut = 1;
                 break;
             }
 
-            plan[i] |= CE_SEND_STATE;
-            budget -= CE_STATE_LEN;
+            plan[i] |= compact ? CE_SEND_COMPACT : CE_SEND_STATE;
+            budget -= len;
         }
     }
 
