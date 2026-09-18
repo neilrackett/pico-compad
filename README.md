@@ -80,7 +80,7 @@ bits move in `XPADVIEW.TOS`.
 | `test/`           | host tests for the decoder, Hatari end-to-end runners              |
 | `docs/`           | protocol, hardware, roadmap, design notes                          |
 | `dist/`           | `make dist` output: everything that goes onto hardware, listed as it runs |
-| `lib/`            | submodules: `xpad` at v1.1.0, plus `pico-sdk`, `pico-extras` and `bluepad32` |
+| `lib/`            | submodules: `xpad` at v1.1.1, plus `pico-sdk`, `pico-extras` and `bluepad32` |
 
 Two different things are called xpad, and it is worth keeping them
 apart. [atarist-xpad](https://github.com/neilrackett/atarist-xpad) is
