@@ -295,6 +295,131 @@ static void compact_checks(void)
           "the decoder and the encoder agree on its length");
 }
 
+/*
+ * Battery, and the flags it reaches the ST in.
+ *
+ * uni_controller.h contradicts itself here: an enum says 0 means the
+ * pad does not report a battery, and a comment three lines later says
+ * 0 is empty and 255 is unavailable. Every parser in the tree follows
+ * the enum, and getting it backwards would light LOWBATT on every pad
+ * that never reports one, which is the opposite of a warning: it would
+ * teach people to ignore the flag.
+ */
+static void battery_checks(void)
+{
+    uint8_t flags = ce_pad_flags(255);
+
+    check((flags & (XPAD_PAD_ANALOG | XPAD_PAD_WIRELESS)) ==
+              (XPAD_PAD_ANALOG | XPAD_PAD_WIRELESS),
+          "every pad here is analogue and wireless");
+    check(!(flags & XPAD_PAD_LOWBATT), "a full battery is not low");
+
+    check(!(ce_pad_flags(0) & XPAD_PAD_LOWBATT),
+          "a pad that reports no battery is not low either");
+    check(ce_pad_flags(1) & XPAD_PAD_LOWBATT, "an empty one is");
+    check(ce_pad_flags(51) & XPAD_PAD_LOWBATT, "and so is a fifth left");
+    check(!(ce_pad_flags(52) & XPAD_PAD_LOWBATT), "just above it is not");
+
+    /* The DS5 and DS4 formula is capacity * 25 + 1, so these are the
+     * values those pads actually produce, not points between them. */
+    check(ce_pad_flags(2 * 25 + 1) & XPAD_PAD_LOWBATT,
+          "two bars of ten reads low on a DualSense");
+    check(!(ce_pad_flags(3 * 25 + 1) & XPAD_PAD_LOWBATT),
+          "three does not");
+}
+
+/*
+ * The LED and the button, which are the two optional components and
+ * therefore the two nobody's bench necessarily has.
+ */
+#define TEST_FAST 5
+#define TEST_SLOW 40
+
+static int led_edges(int bonded, int ticks)
+{
+    int was = -1, edges = 0, t;
+
+    for (t = 0; t < ticks; t++)
+    {
+        int on = ce_led_on(0, bonded, (uint16_t)t, TEST_FAST, TEST_SLOW);
+
+        if (was >= 0 && on != was)
+            edges++;
+
+        was = on;
+    }
+
+    return edges;
+}
+
+static void led_checks(void)
+{
+    int fast = led_edges(0, 800);
+    int slow = led_edges(1, 800);
+
+    check(ce_led_on(1, 0, 0, TEST_FAST, TEST_SLOW) &&
+              ce_led_on(1, 0, 7, TEST_FAST, TEST_SLOW) &&
+              ce_led_on(1, 1, 123, TEST_FAST, TEST_SLOW),
+          "a connected pad is a solid light, whatever the phase");
+
+    check(fast > 0 && slow > 0, "and no pad is a blink either way");
+
+    /* The whole requirement, from docs/roadmap.md: the two phases only
+     * have to be obviously different from each other. */
+    check(fast >= slow * 4, "looking for a new pad blinks far faster");
+
+    /* A blink is a blink: it has to spend time off as well as on.
+     * The first period is the off half, the second the on half. */
+    check(!ce_led_on(0, 0, 0, TEST_FAST, TEST_SLOW) &&
+              ce_led_on(0, 0, TEST_FAST, TEST_FAST, TEST_SLOW),
+          "the fast blink is off then on");
+    check(!ce_led_on(0, 1, 0, TEST_FAST, TEST_SLOW) &&
+              ce_led_on(0, 1, TEST_SLOW, TEST_FAST, TEST_SLOW),
+          "and so is the slow one");
+}
+
+static void button_checks(void)
+{
+    const uint16_t hold = 100;
+    uint16_t held = 0;
+    int fired = 0;
+    int t;
+
+    /* An unwired button reads not-pressed for ever and must never
+     * fire: this is the default build, with nothing soldered on. */
+    for (t = 0; t < 1000; t++)
+        fired += ce_forget_due(0, hold, &held);
+
+    check(fired == 0, "an unwired button never forgets anything");
+
+    /* A hold fires once, on the tick it completes, and not again
+     * however long the finger stays. */
+    held = 0;
+    fired = 0;
+    for (t = 0; t < 10000; t++)
+        fired += ce_forget_due(1, hold, &held);
+
+    check(fired == 1, "a hold fires exactly once, however long it lasts");
+
+    /* A tap short of the threshold does nothing at all. */
+    held = 0;
+    fired = 0;
+    for (t = 0; t < (int)hold - 1; t++)
+        fired += ce_forget_due(1, hold, &held);
+    fired += ce_forget_due(0, hold, &held);
+
+    check(fired == 0, "a tap short of the hold does nothing");
+    check(held == 0, "and releasing resets the count");
+
+    /* Released and held again, it fires again: once per hold, not
+     * once per lifetime. */
+    fired = 0;
+    for (t = 0; t < (int)hold; t++)
+        fired += ce_forget_due(1, hold, &held);
+
+    check(fired == 1, "a second hold fires again");
+}
+
 int main(void)
 {
     COMPAD_DECODER d;
@@ -457,6 +582,9 @@ int main(void)
 
     schedule_checks();
     compact_checks();
+    battery_checks();
+    led_checks();
+    button_checks();
 
     printf("\n%s\n", failures ? "FAILED" : "all checks passed");
 

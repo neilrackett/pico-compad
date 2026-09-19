@@ -276,3 +276,36 @@ default.
 Probing is not read-only, so the settings of any port that does not
 answer are put back, and stopping at the first answer means the common
 case never touches the others at all.
+
+## Phase 5: everything a consumer can see
+
+What was declared but never delivered, which is the worst kind of gap:
+a capability bit is a promise, and an unkept one is worse than an
+absent one.
+
+**Hotplug.** A pad leaving now sends a descriptor carrying
+`XPAD_TYPE_NONE` for its slot, repeated for about two seconds the way
+every other descriptor here is repeated. Before this the adapter said
+nothing, so a slot kept the type of whatever last occupied it and
+`xpad_connected()` counted a pad that had gone. With both directions
+announced, `XPAD_CAP_HOTPLUG` is honest and is claimed.
+
+**Battery.** `XPAD_PAD_LOWBATT` at a fifth of Bluepad32's range or
+below, carried on the descriptor repeat rather than announced, because
+a battery moves over hours and that repeat is five a second. A pad that
+reports no battery is not low: `uni_controller.h` contradicts itself on
+which end of the scale means "unknown", and reading it the wrong way
+round would light the flag on every pad without a sensor, which teaches
+people to ignore it.
+
+**The link budget.** The tick never writes more than the link carries
+in one, defers what does not fit, and rotates so nothing starves. Four
+pads pressing buttons fall back to compact frames and all four are
+served; four moving sticks defer one pad by a single tick. One and two
+pads are byte for byte what they always were.
+
+**The two optional components.** The LED phases and the forget button's
+hold are decisions now, in `encode.h`, tested on the host. They used to
+be reachable only by soldering something on and watching it, which is
+the least testable code in the repository living in the one place
+nobody's bench necessarily has.

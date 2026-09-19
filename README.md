@@ -23,9 +23,9 @@ through the cookie jar with axes, triggers and pad type intact.
 **Phase 3 works on real hardware.** A Bluetooth controller paired to a
 Pico W, through a MAX3232 into a Mega STE's Modem 1, reaches an `XPAD`
 block that `XPADVIEW.TOS` reads back with buttons, sticks and triggers
-intact. Phase 4, rumble and port detection by ping, is written and
-passes under emulation but has not been tried on hardware: see
-[docs/roadmap.md](docs/roadmap.md).
+intact. Phases 4 and 5, rumble, port detection by ping, hotplug,
+battery and the link budget, are written and pass under emulation but
+have not been tried on hardware: see [docs/roadmap.md](docs/roadmap.md).
 
 To build one, see [docs/wiring.md](docs/wiring.md). A MAX3232 is the
 only part you need; the status LED and the forget button are optional
@@ -96,7 +96,7 @@ the development harness and never by anything that ships.
 | [docs/protocol.md](docs/protocol.md) | the wire contract: frame types, layouts, timing budget    |
 | [docs/wiring.md](docs/wiring.md)     | how to build one: four wires minimum, extras marked optional |
 | [docs/hardware.md](docs/hardware.md) | building the adapter, connectors, which socket is the MFP |
-| [docs/roadmap.md](docs/roadmap.md)   | phases 0 to 4, what each one proves                       |
+| [docs/roadmap.md](docs/roadmap.md)   | phases 0 to 5, what each one proves                       |
 | [docs/design.md](docs/design.md)     | why serial rather than MIDI, layering, constraints        |
 
 Working practices for contributors and agents are in

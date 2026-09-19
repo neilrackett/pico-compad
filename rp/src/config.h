@@ -78,6 +78,12 @@
 #define COMPAD_TX_BUDGET ((COMPAD_BAUD / 10) / COMPAD_TICKS_PER_SEC)
 #define COMPAD_TXBUF 128
 
+/* How many times a departing pad's XPAD_TYPE_NONE descriptor is
+ * repeated, at the descriptor interval: about two seconds, which is
+ * far longer than any burst of noise this link has seen and short
+ * enough that an empty slot goes quiet. */
+#define COMPAD_GONE_NOTICES 10
+
 /* How often to re-ask whether anything is bonded, while no pad is
  * connected. The events that change the answer mark it due instead of
  * answering it, so there is one path and it is this one. Cheap: the

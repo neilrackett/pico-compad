@@ -164,9 +164,16 @@ And a real Bluetooth controller has been driven through
 `harness/pad.html` into the viewer by hand, which is the half no
 automation can cover.
 
-Phase 4, rumble and finding the port by ping, is written and passes
-under emulation, but no pad has buzzed and no port has been found on
-real hardware. Do not describe that half as proven.
+Phases 4 and 5 are written and pass under emulation, and none of it has
+run on hardware: no pad has buzzed, no port has been found by ping, and
+nothing has ever had more than one pad on it. Do not describe any of
+that as proven.
+
+Phase 5 is the capabilities a consumer can see: hotplug, battery, the
+link budget and the two optional components. The rule it came from is
+worth keeping: a capability bit is a promise, and `XPAD_CAP_HOTPLUG`
+sat unclaimed while a departing pad went unannounced, so a slot kept
+the type of whatever last occupied it.
 
 Serial timing under Hatari stays meaningless: framing, sync recovery
 and checksums are proven there, baud and latency are not. `test-wire`'s

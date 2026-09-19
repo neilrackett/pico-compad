@@ -216,6 +216,35 @@ static COMPAD_UNUSED void compad_compact_frame(uint8_t pad, uint32_t buttons,
     f[4] = ce_checksum(f, CE_COMPACT_LEN);
 }
 
+/*
+ * A pad's flags, from Bluepad32's battery reading.
+ *
+ * The scale is 1 to 255 with 0 meaning the pad does not report one,
+ * which is the enum in uni_controller.h rather than the comment three
+ * lines below it: that comment says 0 is empty and 255 unavailable,
+ * and every parser in the tree does the opposite. icade writes
+ * NOT_AVAILABLE as 0, Switch writes EMPTY as 1, and DS4 and DS5 both
+ * compute capacity * 25 + 1, which never reaches 0 at all.
+ *
+ * 51 is a fifth of the range and the third step of that DS5 formula,
+ * so the threshold falls on a value those pads actually report rather
+ * than between two of them.
+ */
+#define CE_BATTERY_UNKNOWN 0
+#define CE_BATTERY_LOW 51
+
+static COMPAD_UNUSED uint8_t ce_pad_flags(uint8_t battery)
+{
+    uint8_t flags = XPAD_PAD_ANALOG | XPAD_PAD_WIRELESS;
+
+    /* Unknown is not low. A pad that never reports must not look like
+     * one that is about to die. */
+    if (battery != CE_BATTERY_UNKNOWN && battery <= CE_BATTERY_LOW)
+        flags |= XPAD_PAD_LOWBATT;
+
+    return flags;
+}
+
 /* Whether a compact frame would carry the whole difference. */
 static COMPAD_UNUSED int ce_compact_ok(const COMPAD_STATE *now,
                                        const COMPAD_STATE *sent)
@@ -332,6 +361,58 @@ static COMPAD_UNUSED void ce_schedule(const uint8_t *want, uint8_t pads,
      * to its natural order rather than drifting for no reason. */
     if (!cut)
         *next = 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* The two optional components                                          */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The status LED, as an Xbox controller's light behaves: solid when a
+ * pad is connected, a fast blink while looking for a new one, a slow
+ * blink while waiting for a pad it already knows.
+ *
+ * Here rather than in the platform file because the platform's half is
+ * one GPIO write and this is the part with a decision in it. The
+ * phases only have to be obviously different from each other, so the
+ * test is that they are, not what they measure.
+ */
+static COMPAD_UNUSED int ce_led_on(int connected, int bonded,
+                                   uint16_t blink, uint16_t fast,
+                                   uint16_t slow)
+{
+    if (connected)
+        return 1;
+
+    return (blink / (bonded ? slow : fast)) & 1;
+}
+
+/*
+ * The forget button, which is held rather than pressed.
+ *
+ * Returns true on the single tick the hold completes, never again
+ * until the button comes back up, because wiping bonds repeatedly for
+ * as long as a finger rests on a switch is not what anyone means. The
+ * counter stops at the threshold rather than running on, so a long
+ * hold cannot wrap it back round to the firing value.
+ *
+ * pressed is the logical sense, not the pin: the pin has a pull-up and
+ * reads low when pressed, and with no button wired it reads high for
+ * ever, which is exactly "not pressed".
+ */
+static COMPAD_UNUSED int ce_forget_due(int pressed, uint16_t hold,
+                                       uint16_t *held)
+{
+    if (!pressed)
+    {
+        *held = 0;
+        return 0;
+    }
+
+    if (*held <= hold)
+        (*held)++;
+
+    return *held == hold;
 }
 
 #endif /* COMPAD_ENCODE_H */

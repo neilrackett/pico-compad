@@ -118,6 +118,25 @@ should report a generic gamepad rather than nothing: `compad.c` does this, and i
 why a missing descriptor shows up as the wrong pad type rather than an
 absent pad.
 
+**A pad leaving is a descriptor too**, carrying `XPAD_TYPE_NONE` and
+zero flags for that slot. Without one, a slot keeps the type of
+whatever last occupied it for the rest of the session and
+`xpad_connected()` goes on counting a pad that walked out of the room.
+It is repeated like any other descriptor, because one frame is a single
+point of failure on a link that can lose bytes, but a bounded number of
+times: an empty slot has nothing further to say, so the notices stop
+after about two seconds.
+
+**`flags` carries the battery.** `XPAD_PAD_LOWBATT` is set at a fifth
+of the range or below, and a pad that does not report a battery at all
+is not low. That distinction matters more than the threshold does: a
+flag that lights for every pad that simply has no sensor is one people
+learn to ignore.
+
+An adapter that announces arrivals and departures this way may claim
+`XPAD_CAP_HOTPLUG`, which says pad type changes at runtime and a
+consumer should re-read it rather than cache it at startup.
+
 ## Ping frame (type `0x2`, host to adapter)
 
 ```

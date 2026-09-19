@@ -39,6 +39,8 @@
 typedef struct
 {
     bool present;
+    uint8_t battery;        /* Bluepad32's 1..255, 0 when unreported */
+    uint8_t gone;           /* departure notices still owed          */
     COMPAD_STATE state;
     COMPAD_STATE sent;
     uint8_t since_send;     /* ticks since this pad's last frame     */
@@ -195,7 +197,11 @@ static bool pad_can_rumble(int idx)
  */
 static uint16_t caps_now(void)
 {
-    uint16_t caps = XPAD_CAP_ANALOG;
+    /* Hotplug is claimed unconditionally because it is a property of
+     * this adapter rather than of a pad: a descriptor goes out when
+     * one arrives and again when one leaves, so a consumer watching
+     * XPAD_PAD.type sees both. */
+    uint16_t caps = XPAD_CAP_ANALOG | XPAD_CAP_HOTPLUG;
     int i;
 
     for (i = 0; i < COMPAD_PADS; i++)
@@ -207,14 +213,24 @@ static uint16_t caps_now(void)
     return caps;
 }
 
+/*
+ * Every pad here arrives over Bluetooth and reports axes, so the only
+ * questions are whether a pad is in this slot at all and what its
+ * battery is doing.
+ *
+ * An empty slot gets XPAD_TYPE_NONE rather than nothing: that is what
+ * tells the ST a pad has left, and xpad_connected() stops counting it.
+ * Without it a slot kept the type of whatever last occupied it for the
+ * rest of the session.
+ */
 static void send_descriptor(uint8_t pad)
 {
     uint8_t f[CE_DESC_LEN];
+    int here = slots[pad].present;
 
-    /* Every pad here arrives over Bluetooth and reports axes. */
-    compad_descriptor_frame(pad, XPAD_TYPE_GAMEPAD,
-                            XPAD_PAD_ANALOG | XPAD_PAD_WIRELESS, caps_now(),
-                            f);
+    compad_descriptor_frame(pad, here ? XPAD_TYPE_GAMEPAD : XPAD_TYPE_NONE,
+                            here ? ce_pad_flags(slots[pad].battery) : 0,
+                            caps_now(), f);
     wire_write(f, CE_DESC_LEN);
 
     slots[pad].since_descriptor = 0;
@@ -306,8 +322,6 @@ static void led_set(bool on)
  */
 static void led_tick(void)
 {
-    uint16_t period;
-
     if (any_connected())
     {
         led_set(true);
@@ -322,10 +336,8 @@ static void led_tick(void)
         bonds = scan_bonds();
     }
 
-    period = bonds ? COMPAD_BLINK_SLOW : COMPAD_BLINK_FAST;
-
     blink++;
-    led_set((blink / period) & 1);
+    led_set(ce_led_on(0, bonds, blink, COMPAD_BLINK_FAST, COMPAD_BLINK_SLOW));
 }
 
 /* ------------------------------------------------------------------ */
@@ -344,16 +356,9 @@ static void button_tick(void)
 {
     const uint16_t hold = COMPAD_FORGET_HOLD_MS / COMPAD_TICK_MS;
 
-    if (gpio_get(COMPAD_BUTTON_PIN))
-    {
-        held_ticks = 0;
-        return;
-    }
-
-    if (held_ticks <= hold)
-        held_ticks++;
-
-    if (held_ticks == hold)
+    /* The pin has a pull-up, so low is pressed and an unwired button
+     * reads high for ever. */
+    if (ce_forget_due(!gpio_get(COMPAD_BUTTON_PIN), hold, &held_ticks))
     {
         logi("compad: forgetting bonded pads\n");
 
@@ -413,15 +418,11 @@ static void answer_ping(void)
         }
     }
 
+    /* Here, but with nothing plugged in. An empty slot's descriptor
+     * carries XPAD_TYPE_NONE, which says exactly that, and
+     * xpad_connected() on the ST counts it as no pad. */
     if (!replied)
-    {
-        uint8_t f[CE_DESC_LEN];
-
-        /* Here, but with nothing plugged in: XPAD_TYPE_NONE says so,
-         * and xpad_connected() on the ST counts it as no pad. */
-        compad_descriptor_frame(0, XPAD_TYPE_NONE, 0, caps_now(), f);
-        wire_write(f, CE_DESC_LEN);
-    }
+        send_descriptor(0);
 }
 
 static void handle_request(const uint8_t *f)
@@ -579,7 +580,16 @@ static void tick(btstack_timer_source_t *ts)
         want[i] = 0;
 
         if (!s->present)
+        {
+            /* An empty slot still has departure notices to deliver. */
+            if (s->gone && ++s->since_descriptor >= COMPAD_DESCRIPTOR_EVERY)
+            {
+                want[i] |= CE_SEND_DESCRIPTOR;
+                s->gone--;
+            }
+
             continue;
+        }
 
         if (s->since_descriptor < 255)
             s->since_descriptor++;
@@ -707,6 +717,18 @@ static void compad_on_device_disconnected(uni_hid_device_t *d)
 
     memset(&slots[idx], 0, sizeof(slots[idx]));
     memset(&rumble[idx], 0, sizeof(rumble[idx]));
+
+    /*
+     * Then say it has gone, and keep saying it for a couple of
+     * seconds. A descriptor is the only frame that carries the pad
+     * type, and one of them is a single point of failure on a link
+     * that can lose bytes: the repeat is how every other descriptor
+     * here survives noise, so a departure gets the same treatment.
+     * Bounded, unlike the repeat for a pad that is present, because an
+     * empty slot has nothing further to say.
+     */
+    slots[idx].gone = COMPAD_GONE_NOTICES;
+    send_descriptor((uint8_t)idx);
 }
 
 static uni_error_t compad_on_device_ready(uni_hid_device_t *d)
@@ -753,6 +775,10 @@ static void compad_on_controller_data(uni_hid_device_t *d,
         return;
 
     gp = &ctl->gamepad;
+
+    /* Carried on the descriptor repeat rather than announced, because
+     * a battery moves over hours and that repeat is five a second. */
+    slots[idx].battery = ctl->battery;
 
     compad_map(gp->dpad, gp->buttons, gp->misc_buttons, gp->axis_x,
                gp->axis_y, gp->axis_rx, gp->axis_ry, gp->brake, gp->throttle,
