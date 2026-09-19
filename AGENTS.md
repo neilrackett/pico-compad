@@ -30,7 +30,7 @@ why it stays clean even though only the ST uses it.
 
 xpad is a **submodule** (`lib/xpad`), not a vendored copy, so the two
 projects stay in sync while both evolve. Do not edit files under
-`lib/`; change them upstream and bump. The pin is xpad **v1.1.1**:
+`lib/`; change them upstream and bump. The pin is xpad **v1.1.2**:
 prefer bumping to a tag rather than to whatever `main` happens to hold,
 so a checkout of COMpad names the ABI version it was built against.
 
