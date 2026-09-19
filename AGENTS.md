@@ -92,11 +92,15 @@ file names the command that makes it.
 `make firmware` is a cross build and deliberately not part of `make
 test`, the same way `st` is not: it needs CMake and arm-none-eabi-gcc,
 and it proves compilation rather than behaviour. Everything about the
-firmware that can be tested without a Pico lives in `rp/src/encode.h`
-and is covered by `test/encode_test.c`, which round trips every frame
-the firmware can emit through the ST's own decoder. Put new firmware
-logic there rather than in `compad_platform.c` wherever there is a
-choice.
+firmware that can be tested without a Pico lives in a header free of
+the Pico SDK and BTstack, which is what lets the host build compile it:
+`rp/src/encode.h` for anything that becomes a frame or decides what
+goes on the wire, `rp/src/panel.h` for the LED and the forget button.
+`test/encode_test.c` covers both, and round trips every frame the
+firmware can emit through the ST's own decoder. Put new firmware logic
+in whichever of them fits rather than in `compad_platform.c`, and add a
+third header rather than letting either become a drawer for anything
+that happens to be testable.
 
 The npm version and the `esm.sh` pin in `harness/pad.html` must match.
 They are the two halves of phase 2, one automated and one hands-on, and

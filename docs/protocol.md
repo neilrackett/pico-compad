@@ -38,7 +38,7 @@ Frame types:
 | Value | Name    | Length | Use |
 |-------|---------|--------|-----|
 | `0x0` | State   | 12     | Normal per-pad state |
-| `0x1` | Compact | 5      | Buttons only, for slow links |
+| `0x1` | Compact | 5      | Buttons only, for an over-budget tick or a slow link |
 | `0x2` | Ping    | 3      | Host to adapter: are you there? |
 | `0xE` | Request | 8      | Host to adapter: rumble, LED |
 | `0xF` | Descriptor | 7   | Pad type, flags, caps on attach |
@@ -78,9 +78,11 @@ XOR rather than CRC-8. One instruction per byte would keep even a
 4   checksum    XOR of bytes 0..3
 ```
 
-For future consumers whose bit-banged UARTs cap out around 2400 baud.
-Digital directions and face buttons only. Nothing on the ST needs it,
-but it costs one switch case to keep in the decoder.
+Digital directions and face buttons only, and the receiver leaves its
+copy of the axes alone. Sent when a tick is over budget, which is what
+lets four pads pressing buttons all be served: see "When it does not
+fit". Also what a future consumer whose bit-banged UART caps out around
+2400 baud would use for everything.
 
 ## Descriptor frame (type `0xF`)
 
@@ -180,6 +182,17 @@ on any port that does not reply.
 
 Xbox trigger impulse motors have no home in xpad v1, so only the two
 main motors are driven.
+
+**What the reference adapter honours today**: the two rumble bytes, and
+nothing else. `duration` is treated as 0 whatever it holds, because
+xpad's request area carries magnitudes and no duration, so a consumer
+has no way to ask for anything else. `led` is read off the wire and
+discarded: Bluepad32's Xbox parser implements neither `set_player_leds`
+nor `set_lightbar_color`, so there is nothing on that pad to light, and
+`XPAD_CAP_LED` is correspondingly never claimed. Both fields stay in
+the frame so that honouring them later needs no wire change. A sender
+should keep filling them in; a receiver may ignore what it cannot do,
+but must not claim the capability.
 
 `duration` of 0 means "until replaced", which is what xpad's request
 area implies: it carries magnitudes and no duration, so a consumer that
@@ -285,3 +298,13 @@ past; a dropped one costs a single update.
 None of this changes anything below three pads, which is every session
 anyone has actually run: one or two frames fit the UART's FIFO outright
 and the rotation never defers anything.
+
+**Two paths are outside the budget**, deliberately. A ping is answered
+the moment it arrives rather than waiting for the next tick's
+allowance, because the sender is timing the reply and a probe that
+found nothing moves on. A departing pad's last state frame and first
+departure notice go out the same way, because by the time the tick runs
+the slot is empty and has nothing left to say. Both are one-off and
+bounded, the queue absorbs them, and anything it cannot hold is dropped
+whole and counted rather than truncated. An adapter may do the same; it
+may not put a periodic frame on that path.

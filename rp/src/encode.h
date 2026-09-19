@@ -150,16 +150,10 @@ static COMPAD_UNUSED void compad_map(uint8_t dpad, uint16_t buttons, uint8_t mis
 #define CE_DESC_LEN 7
 #define CE_COMPACT_LEN 5
 
-static COMPAD_UNUSED uint8_t ce_checksum(const uint8_t *f, uint8_t len)
-{
-    uint8_t x = 0;
-    uint8_t i;
-
-    for (i = 0; i + 1 < len; i++)
-        x ^= f[i];
-
-    return x;
-}
+/* The checksum rule is the wire contract, so it has one definition and
+ * protocol.h owns it. This name stays because it reads better at the
+ * end of a frame builder. */
+#define ce_checksum(f, len) compad_xor((f), (len))
 
 /* Writes CE_STATE_LEN bytes. */
 static COMPAD_UNUSED void compad_state_frame(uint8_t pad,
@@ -300,11 +294,14 @@ static COMPAD_UNUSED void ce_schedule(const uint8_t *want, uint8_t pads,
                                       int budget, uint8_t *next,
                                       uint8_t *plan)
 {
-    uint8_t start = *next % pads;
+    uint8_t start = *next;
     uint8_t n;
     int demand = 0;
     int squeeze;
-    int cut = 0;
+
+    /* Assume everyone will be served; the spend loop says otherwise by
+     * writing the pad it stopped on. */
+    *next = 0;
 
     for (n = 0; n < pads; n++)
     {
@@ -347,8 +344,9 @@ static COMPAD_UNUSED void ce_schedule(const uint8_t *want, uint8_t pads,
 
             if (budget < len)
             {
+                /* Out of link. This pad goes first next tick, so a
+                 * busy neighbour cannot starve it. */
                 *next = i;
-                cut = 1;
                 break;
             }
 
@@ -356,63 +354,6 @@ static COMPAD_UNUSED void ce_schedule(const uint8_t *want, uint8_t pads,
             budget -= len;
         }
     }
-
-    /* Everyone who wanted the link got it, so the rotation goes back
-     * to its natural order rather than drifting for no reason. */
-    if (!cut)
-        *next = 0;
-}
-
-/* ------------------------------------------------------------------ */
-/* The two optional components                                          */
-/* ------------------------------------------------------------------ */
-
-/*
- * The status LED, as an Xbox controller's light behaves: solid when a
- * pad is connected, a fast blink while looking for a new one, a slow
- * blink while waiting for a pad it already knows.
- *
- * Here rather than in the platform file because the platform's half is
- * one GPIO write and this is the part with a decision in it. The
- * phases only have to be obviously different from each other, so the
- * test is that they are, not what they measure.
- */
-static COMPAD_UNUSED int ce_led_on(int connected, int bonded,
-                                   uint16_t blink, uint16_t fast,
-                                   uint16_t slow)
-{
-    if (connected)
-        return 1;
-
-    return (blink / (bonded ? slow : fast)) & 1;
-}
-
-/*
- * The forget button, which is held rather than pressed.
- *
- * Returns true on the single tick the hold completes, never again
- * until the button comes back up, because wiping bonds repeatedly for
- * as long as a finger rests on a switch is not what anyone means. The
- * counter stops at the threshold rather than running on, so a long
- * hold cannot wrap it back round to the firing value.
- *
- * pressed is the logical sense, not the pin: the pin has a pull-up and
- * reads low when pressed, and with no button wired it reads high for
- * ever, which is exactly "not pressed".
- */
-static COMPAD_UNUSED int ce_forget_due(int pressed, uint16_t hold,
-                                       uint16_t *held)
-{
-    if (!pressed)
-    {
-        *held = 0;
-        return 0;
-    }
-
-    if (*held <= hold)
-        (*held)++;
-
-    return *held == hold;
 }
 
 #endif /* COMPAD_ENCODE_H */

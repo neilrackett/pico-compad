@@ -125,20 +125,30 @@ static _IOREC *aux;
 static uint8_t sent_rumble[XPAD_MAX_PADS][2];
 static uint8_t seq_seen;
 
-static void tx_push(const uint8_t *b, uint8_t n)
+/*
+ * Whole frames or nothing.
+ *
+ * Dropping a frame costs one request, which the consumer will make
+ * again; leaving half of one in the ring puts bytes on the wire that
+ * the adapter has to resynchronise past. The ring holds 31 usable
+ * bytes and four pads asking at once is 32, so this is reachable
+ * rather than theoretical.
+ */
+static int tx_push(const uint8_t *b, uint8_t n)
 {
+    uint8_t used = (uint8_t)((txtail + TXBUF - txhead) % TXBUF);
     uint8_t i;
+
+    if (TXBUF - 1 - used < n)
+        return 0;
 
     for (i = 0; i < n; i++)
     {
-        uint8_t next = (uint8_t)((txtail + 1) % TXBUF);
-
-        if (next == txhead)
-            return; /* full: drop, the consumer will ask again */
-
         txbuf[txtail] = b[i];
-        txtail = next;
+        txtail = (uint8_t)((txtail + 1) % TXBUF);
     }
+
+    return 1;
 }
 
 /*
@@ -163,12 +173,10 @@ static void tx_tick(void)
  */
 static void requests_tick(void)
 {
-    int i;
+    int i, dropped = 0;
 
     if (!can_transmit || req.seq == seq_seen)
         return;
-
-    seq_seen = req.seq;
 
     for (i = 0; i < XPAD_MAX_PADS; i++)
     {
@@ -179,14 +187,33 @@ static void requests_tick(void)
         if (lo == sent_rumble[i][0] && hi == sent_rumble[i][1])
             continue;
 
-        sent_rumble[i][0] = lo;
-        sent_rumble[i][1] = hi;
-
         /* Duration 0: hold it until asked for something else, which is
          * what a request area with no duration field means. */
         compad_request_frame((uint8_t)i, lo, hi, 0, req.led[i], f);
-        tx_push(f, COMPAD_REQUEST_LEN);
+
+        /* Recorded only once it is queued. Marking it sent first would
+         * make a dropped frame look delivered, and this filter would
+         * then suppress the retry that dropping it relies on. */
+        if (!tx_push(f, COMPAD_REQUEST_LEN))
+        {
+            dropped = 1;
+            continue;
+        }
+
+        sent_rumble[i][0] = lo;
+        sent_rumble[i][1] = hi;
     }
+
+    /*
+     * Only once every pad's request is queued. Marking the sequence
+     * seen while one was dropped would stop this function running
+     * again until the consumer happened to bump seq, which is the
+     * retry the drop is counting on. Leaving it behind costs a walk of
+     * four pads per tick until the ring drains, and the comparison
+     * above skips the ones already sent.
+     */
+    if (!dropped)
+        seq_seen = req.seq;
 }
 
 /* Latest complete state per pad, applied to the whole back buffer on
@@ -238,6 +265,21 @@ static void apply_frame(const uint8_t *f)
 
     case COMPAD_TYPE_COMPACT:
         p->buttons = compad_compact_buttons(f);
+
+        /*
+         * And fold again, from the axes this frame did not carry.
+         *
+         * A compact frame is only sent when the sticks have not moved,
+         * so p->lx and p->ly still hold the right values: what the
+         * assignment above wiped is the d-pad bits the last fold put
+         * there. Without this, a held direction drops out of every
+         * digital consumer's view for as long as compact frames keep
+         * arriving, which is up to a keepalive interval, and only when
+         * three or four pads are busy enough to be over budget. That
+         * is a fault nobody would find on a bench.
+         */
+        xpad_fold_stick(p, p->lx, p->ly, STICK_DEADZONE);
+
         if (p->type == XPAD_TYPE_NONE)
             p->type = XPAD_TYPE_GAMEPAD;
         break;
@@ -434,6 +476,32 @@ static int selftest(void)
           "the left stick folds into the d-pad");
     check(out.ly == -120, "and the analogue value survives the fold");
 
+    /*
+     * And it survives a compact frame, which carries buttons and no
+     * axes at all.
+     *
+     * The adapter sends these when a tick is over budget, which is
+     * three or four busy pads, and the receiver keeps the axes it
+     * already had. Assigning the sixteen button bits therefore wipes
+     * the d-pad bits the last fold put there unless the fold is
+     * applied again from the axes still in the pad. The symptom is a
+     * held direction dropping out of every digital consumer's view for
+     * up to a keepalive interval, only under load, which is not a
+     * fault anybody would find on a bench.
+     *
+     * The stick is still hard up from the frame above.
+     */
+    body[0] = XPAD_SOUTH;
+    body[1] = 0;
+    n = mkframe(f, COMPAD_TYPE_COMPACT, 2, body, 2);
+    compad_bytes(f, n);
+    publish_shadow();
+
+    check(xpad_read(&block, 2, &out) &&
+              out.buttons == (XPAD_UP | XPAD_SOUTH),
+          "a compact frame keeps the folded direction");
+    check(out.ly == -120, "and does not disturb the axes it omits");
+
     /* Inside the deadzone nothing folds, or a resting pad would walk. */
     memset(body, 0, sizeof(body));
     body[3] = 20; /* lx, well under STICK_DEADZONE */
@@ -484,12 +552,6 @@ static int selftest(void)
 /* Install                                                             */
 /* ------------------------------------------------------------------ */
 
-/*
- * Point BIOS device 1 at the MFP, and say so if it was pointing
- * somewhere else. Bconmap arrived with the machines that have more
- * than one serial port, so anything older is left alone: it has only
- * the MFP to offer anyway.
- */
 /*
  * Ping a port and wait briefly for any valid frame back.
  *
@@ -542,37 +604,40 @@ static int port_answers(void)
  * is meant to be and because stopping there means the other ports are
  * never touched at all. That matters: probing is not read only. It
  * remaps device 1 and reconfigures the port's line settings, so a
- * modem mid-call or a serial printer would notice. Settings are put
- * back on every port that does not answer.
+ * modem mid-call or a serial printer would notice. Every port that
+ * does not answer has its settings put back as far as Rsconf permits,
+ * which is UCR, RSR, TSR and SCR: the line rate and flow control
+ * cannot be read back through TOS at all, so a port probed and left
+ * keeps 19200 with no handshake. The MFP is probed first, so a port
+ * is only ever reached when the adapter is somewhere else.
  *
  * Nothing answers, or this TOS has no Bconmap: fall back to the MFP,
  * which is the recommended and often only port. So forgetting to plug
  * the adapter in, or switching it on later, still works.
  *
- * Returns the device it settled on, and whether that was by answer.
+ * Returns the device it settled on, and sets *answered to whether
+ * that was because something replied or because nothing did.
  */
-static int found_by_ping;
 
-/* Modem 1 rather than "the MFP": what is printed on the case. */
+/* What is printed on the case, not which chip is behind it. */
 static const char *port_name(int dev)
 {
     unsigned i;
 
-    if (dev == BCONMAP_MFP)
-        return "Modem 1";
-
     for (i = 0; i < STPORT_COUNT; i++)
     {
         if (stports[i].dev == dev)
-            return stports[i].name;
+            return stports[i].label;
     }
 
     return "an unknown port";
 }
 
-static int claim_port(void)
+static int claim_port(int *answered)
 {
     unsigned i;
+
+    *answered = 0;
 
     if (stport_has_bconmap())
     {
@@ -592,11 +657,25 @@ static int claim_port(void)
 
             if (port_answers())
             {
-                found_by_ping = 1;
+                *answered = 1;
                 return stports[i].dev;
             }
 
-            /* Put this port back as it was before moving on. */
+            /*
+             * Put this port back, as far as TOS will allow.
+             *
+             * Rsconf's query form reports UCR, RSR, TSR and SCR and
+             * nothing else: the line rate and the flow control setting
+             * cannot be read back at all, so a port probed and left
+             * keeps this provider's 19200 with no handshake rather
+             * than whatever it had. Nothing in TOS can do better, so
+             * the honest thing is to say so rather than to imply the
+             * probe was invisible.
+             *
+             * It reaches a port at all only when the adapter is not on
+             * the MFP, since that one is probed first and answers
+             * immediately.
+             */
             Rsconf(-1, -1, (int)((settings >> 24) & 0xff),
                    (int)((settings >> 16) & 0xff),
                    (int)((settings >> 8) & 0xff), (int)(settings & 0xff));
@@ -613,7 +692,7 @@ static int claim_port(void)
 
 static int install(void)
 {
-    int port;
+    int port, answered;
 
     printf(BANNER);
 
@@ -626,7 +705,7 @@ static int install(void)
 
     init_block();
 
-    port = claim_port();
+    port = claim_port(&answered);
     can_transmit = (port == BCONMAP_MFP);
     aux = (_IOREC *)Iorec(0);
 
@@ -659,7 +738,7 @@ static int install(void)
      * looked" is a different fact from "because I gave up". */
     printf("Xpad provider listening on %s.\r\n", port_name(port));
 
-    if (!found_by_ping)
+    if (!answered)
         printf("No adapter answered, so this is the default.\r\n");
 
     return 1;

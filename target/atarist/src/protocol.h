@@ -105,6 +105,19 @@ static COMPAD_UNUSED void compad_init(COMPAD_DECODER *d)
     d->need = 0;
 }
 
+/* ------------------------------------------------------------------ */
+
+static COMPAD_UNUSED uint8_t compad_xor(const uint8_t *f, uint8_t len)
+{
+    uint8_t x = 0;
+    uint8_t i;
+
+    for (i = 0; i + 1 < len; i++)
+        x ^= f[i];
+
+    return x;
+}
+
 /*
  * Feed one received byte. Returns the frame's length when a complete,
  * checksum-verified frame sits in d->buf, otherwise 0. The frame is
@@ -149,16 +162,11 @@ static COMPAD_UNUSED uint8_t compad_feed_sync(COMPAD_DECODER *d, uint8_t b,
 
     {
         uint8_t len = d->need;
-        uint8_t x = 0;
-        uint8_t i;
 
         d->have = 0;
         d->need = 0;
 
-        for (i = 0; i + 1 < len; i++)
-            x ^= d->buf[i];
-
-        if (x == d->buf[len - 1])
+        if (compad_xor(d->buf, len) == d->buf[len - 1])
             return len;
     }
 
@@ -186,18 +194,6 @@ static COMPAD_UNUSED uint8_t compad_feed_req(COMPAD_DECODER *d, uint8_t b)
 /* ------------------------------------------------------------------ */
 /* Building host-to-adapter frames. The ST sends these; the harness    */
 /* and the tests build them too, so they live with the contract.       */
-/* ------------------------------------------------------------------ */
-
-static COMPAD_UNUSED uint8_t compad_xor(const uint8_t *f, uint8_t len)
-{
-    uint8_t x = 0;
-    uint8_t i;
-
-    for (i = 0; i + 1 < len; i++)
-        x ^= f[i];
-
-    return x;
-}
 
 /* Writes COMPAD_PING_LEN bytes: "are you there?" */
 static COMPAD_UNUSED void compad_ping_frame(uint8_t *f)

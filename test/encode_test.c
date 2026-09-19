@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "../rp/src/encode.h"
+#include "../rp/src/panel.h"
 
 static int failures;
 
@@ -420,6 +421,54 @@ static void button_checks(void)
     check(fired == 1, "a second hold fires again");
 }
 
+/*
+ * The rumble re-arm. xpad's request area carries magnitudes and no
+ * duration, so "until replaced" is a burst armed slightly more often
+ * than it lasts. The hazard is at both ends: stop re-arming and the
+ * motor gaps, fail to stop and a pad buzzes after its host has gone.
+ */
+static void rearm_checks(void)
+{
+    const uint16_t rearm = 10;
+    uint16_t age = 0;
+    int fired = 0;
+    int t;
+
+    for (t = 0; t < 100; t++)
+        fired += ce_rumble_due(1, 0, 0, rearm, &age);
+
+    check(fired == 0, "a pad asked for nothing never re-arms");
+
+    age = 0;
+    fired = 0;
+    for (t = 0; t < 100; t++)
+        fired += ce_rumble_due(0, 200, 200, rearm, &age);
+
+    check(fired == 0, "nor does a pad that has left, however loud");
+
+    /* Held magnitudes re-arm forever, which is what "until replaced"
+     * means, and at the interval rather than continuously. */
+    age = 0;
+    fired = 0;
+    for (t = 0; t < 100; t++)
+        if (ce_rumble_due(1, 200, 0, rearm, &age))
+        {
+            fired++;
+            age = 0; /* what arm_rumble() does */
+        }
+
+    check(fired == 10, "a held rumble re-arms once per interval");
+
+    /* One motor is enough to keep it going: a left-only pulse must not
+     * be mistaken for silence. */
+    age = 0;
+    check(!ce_rumble_due(1, 0, 200, rearm, &age),
+          "a right-only rumble is not due on its first tick");
+    age = rearm - 1;
+    check(ce_rumble_due(1, 0, 200, rearm, &age),
+          "but it is when the interval comes round");
+}
+
 int main(void)
 {
     COMPAD_DECODER d;
@@ -585,6 +634,7 @@ int main(void)
     battery_checks();
     led_checks();
     button_checks();
+    rearm_checks();
 
     printf("\n%s\n", failures ? "FAILED" : "all checks passed");
 

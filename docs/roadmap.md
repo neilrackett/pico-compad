@@ -13,10 +13,14 @@ Pico W reaches an `XPAD` block on a real Mega STE over a real wire, and
 `XPADVIEW.TOS` shows it moving. That is the exit criteria met, and it is
 the first thing in this project to have run anywhere but an emulator.
 
-**Phase 4 is written but unproven on hardware.** Rumble and the ping
-that finds which serial port the adapter is on, both built on the
-host-to-adapter direction that nothing implemented before. It passes
-under emulation; no pad has buzzed yet.
+**Phases 4 and 5 are written but unproven on hardware.** Phase 4 is
+rumble and the ping that finds which serial port the adapter is on,
+both built on the host-to-adapter direction that nothing implemented
+before. Phase 5 is what a consumer can see: hotplug, battery, the link
+budget that stops four pads overrunning the tick, and host tests for
+the two optional components. All of it passes under emulation; no pad
+has buzzed yet, no port has been found by ping on a real machine, and
+nothing here has ever had more than one pad on it.
 
 Every phase here targets the Atari ST family. Other platforms are not
 on this roadmap at all: if one happens, it arrives as a new directory
@@ -276,6 +280,14 @@ default.
 Probing is not read-only, so the settings of any port that does not
 answer are put back, and stopping at the first answer means the common
 case never touches the others at all.
+
+The restore is as complete as TOS allows, which is not completely:
+`Rsconf`'s query form reports UCR, RSR, TSR and SCR, and the line rate
+and flow control cannot be read back at all. A port that is probed and
+left therefore keeps 19200 with no handshake rather than whatever it
+had. The MFP is probed first, so this is reachable only on a machine
+where the adapter is on one of the other ports, and it is a limit of
+the BIOS rather than a shortcut here.
 
 ## Phase 5: everything a consumer can see
 

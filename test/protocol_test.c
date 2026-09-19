@@ -23,6 +23,17 @@ static void check(int ok, const char *what)
 }
 
 /* Build a valid frame of the given type into out, returns length. */
+/*
+ * Build a frame the way docs/protocol.md describes one, not the way
+ * protocol.h builds one.
+ *
+ * The XOR below is deliberately a second implementation rather than a
+ * call to compad_xor(): a test that computed the checksum with the
+ * code under test would let a wrong checksum rule agree with itself
+ * and pass. Same reason the harness checks its WebSocket handshake
+ * against RFC 6455's published vector rather than against its own
+ * output. Do not deduplicate this.
+ */
 static uint8_t build(uint8_t *out, uint8_t type, uint8_t pad,
                      const uint8_t *body, uint8_t body_len)
 {

@@ -54,13 +54,14 @@
 typedef struct
 {
     int dev;
-    const char *name;
+    const char *name;  /* for a diagnostic: which chip, which socket */
+    const char *label; /* for a user: what is printed on the case    */
 } STPORT;
 
 static const STPORT stports[] __attribute__((unused)) = {
-    {BCONMAP_MFP, "MFP, Modem 1 on a Mega STE"},
-    {BCONMAP_SCC_B, "SCC channel B, Modem 2"},
-    {BCONMAP_SCC_A, "SCC channel A, LAN"},
+    {BCONMAP_MFP, "MFP, Modem 1 on a Mega STE", "Modem 1"},
+    {BCONMAP_SCC_B, "SCC channel B, Modem 2", "Modem 2"},
+    {BCONMAP_SCC_A, "SCC channel A, LAN", "the LAN port"},
 };
 
 #define STPORT_COUNT (sizeof(stports) / sizeof(stports[0]))

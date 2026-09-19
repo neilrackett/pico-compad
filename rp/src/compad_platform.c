@@ -27,6 +27,7 @@
 
 #include "config.h"
 #include "encode.h"
+#include "panel.h"
 #include "sdkconfig.h"
 
 /* The protocol's pad index is two bits, and Xpad carries four pads. */
@@ -39,12 +40,26 @@
 typedef struct
 {
     bool present;
-    uint8_t battery;        /* Bluepad32's 1..255, 0 when unreported */
-    uint8_t gone;           /* departure notices still owed          */
     COMPAD_STATE state;
     COMPAD_STATE sent;
     uint8_t since_send;     /* ticks since this pad's last frame     */
     uint8_t since_descriptor;
+
+    /*
+     * Descriptors still owed. A pad that is here owes one for ever,
+     * which the interval re-arms; a pad that has left owes a bounded
+     * number of departure notices and then goes quiet. One counter and
+     * one rule, because two rules for "send this slot's descriptor"
+     * had already drifted: only one of them saturated.
+     */
+    uint8_t owed;
+
+    /* What the ST last asked this pad's motors to do, and how long
+     * since they were armed. Here rather than in an array beside this
+     * struct so that clearing a departing slot cannot forget half of
+     * it. */
+    uint8_t rumble_lo, rumble_hi;
+    uint16_t rumble_age;
 } COMPAD_SLOT;
 
 static COMPAD_SLOT slots[COMPAD_PADS];
@@ -60,14 +75,6 @@ static uint8_t next_pad;
  * writes xpad's request area.
  */
 static COMPAD_DECODER rx_dec;
-
-/* What the ST last asked each pad to do, and how long since it was
- * armed. Kept per pad so a re-arm does not need the frame again. */
-static struct
-{
-    uint8_t lo, hi;
-    uint16_t age;
-} rumble[COMPAD_PADS];
 
 /* Bytes seen on the wire's receive side, and when they were last
  * reported. */
@@ -187,6 +194,15 @@ static bool pad_can_rumble(int idx)
     return d && d->report_parser.play_dual_rumble != NULL;
 }
 
+/* Bluepad32's 1 to 255, or 0 when this pad reports none. Read rather
+ * than cached: a second copy is a second thing that can disagree. */
+static uint8_t pad_battery(int idx)
+{
+    uni_hid_device_t *d = uni_hid_device_get_instance_for_idx(idx);
+
+    return d ? d->controller.battery : CE_BATTERY_UNKNOWN;
+}
+
 /*
  * caps is adapter scoped, per docs/protocol.md, so it says what the
  * adapter honours rather than what one pad can do. Rumble is claimed
@@ -229,11 +245,16 @@ static void send_descriptor(uint8_t pad)
     int here = slots[pad].present;
 
     compad_descriptor_frame(pad, here ? XPAD_TYPE_GAMEPAD : XPAD_TYPE_NONE,
-                            here ? ce_pad_flags(slots[pad].battery) : 0,
+                            here ? ce_pad_flags(pad_battery(pad)) : 0,
                             caps_now(), f);
     wire_write(f, CE_DESC_LEN);
 
     slots[pad].since_descriptor = 0;
+
+    /* The ledger is spent where the frame goes out, not where it was
+     * decided: a notice the budget refused must still be owed. */
+    if (slots[pad].owed && !slots[pad].present)
+        slots[pad].owed--;
 }
 
 /* ------------------------------------------------------------------ */
@@ -379,10 +400,14 @@ static void button_tick(void)
 /* Arm a pad's motors for one burst. Silent for a pad that cannot. */
 static void arm_rumble(int idx)
 {
-    uni_hid_device_t *d = uni_hid_device_get_instance_for_idx(idx);
+    uni_hid_device_t *d;
 
-    if (!d || !d->report_parser.play_dual_rumble)
+    /* The same test caps_now() advertises XPAD_CAP_RUMBLE from, so the
+     * claim and the code that honours it cannot drift apart. */
+    if (!pad_can_rumble(idx))
         return;
+
+    d = uni_hid_device_get_instance_for_idx(idx);
 
     /*
      * Bluepad32 calls them weak and strong; xpad calls them high and
@@ -390,8 +415,9 @@ static void arm_rumble(int idx)
      * small fast motor is the weak one.
      */
     d->report_parser.play_dual_rumble(d, 0, COMPAD_RUMBLE_MS,
-                                      rumble[idx].hi, rumble[idx].lo);
-    rumble[idx].age = 0;
+                                      slots[idx].rumble_hi,
+                                      slots[idx].rumble_lo);
+    slots[idx].rumble_age = 0;
 }
 
 /*
@@ -439,8 +465,8 @@ static void handle_request(const uint8_t *f)
         if (pad >= COMPAD_PADS)
             return;
 
-        rumble[pad].lo = COMPAD_REQ_RUMBLE_LO(f);
-        rumble[pad].hi = COMPAD_REQ_RUMBLE_HI(f);
+        slots[pad].rumble_lo = COMPAD_REQ_RUMBLE_LO(f);
+        slots[pad].rumble_hi = COMPAD_REQ_RUMBLE_HI(f);
 
         /* Arm at once, whether that starts it or stops it: a consumer
          * writing zeroes means stop, and waiting for the burst to
@@ -461,10 +487,9 @@ static void rumble_tick(void)
 
     for (i = 0; i < COMPAD_PADS; i++)
     {
-        if (!slots[i].present || (!rumble[i].lo && !rumble[i].hi))
-            continue;
-
-        if (++rumble[i].age >= COMPAD_RUMBLE_REARM)
+        if (ce_rumble_due(slots[i].present, slots[i].rumble_lo,
+                          slots[i].rumble_hi, COMPAD_RUMBLE_REARM,
+                          &slots[i].rumble_age))
             arm_rumble(i);
     }
 }
@@ -478,10 +503,9 @@ static void rumble_tick(void)
  * SENDTEST.TOS on the ST and watch this console, and the question
  * becomes which port the bytes came from.
  *
- * It also proves the receive half of the link, which nothing has ever
- * exercised: the UART is configured for it and until now not one byte
- * has been read. Draining it is the first piece of phase 4's request
- * path, so this is groundwork rather than scaffolding.
+ * The drain is also the request path: every byte goes through the
+ * decoder on its way past, so a ping or a rumble request arrives here
+ * and the console line is a by-product rather than the point.
  */
 static void rx_tick(void)
 {
@@ -579,28 +603,25 @@ static void tick(btstack_timer_source_t *ts)
 
         want[i] = 0;
 
-        if (!s->present)
-        {
-            /* An empty slot still has departure notices to deliver. */
-            if (s->gone && ++s->since_descriptor >= COMPAD_DESCRIPTOR_EVERY)
-            {
-                want[i] |= CE_SEND_DESCRIPTOR;
-                s->gone--;
-            }
-
+        if (!s->present && !s->owed)
             continue;
-        }
 
         if (s->since_descriptor < 255)
             s->since_descriptor++;
-        if (s->since_send < 255)
-            s->since_send++;
 
         /* Repeated, not sent once: the provider discards the serial
          * ring when it installs, so a descriptor that arrived while
-         * the ST was still booting is gone. */
+         * the ST was still booting is gone. A pad that is here owes
+         * one for ever and this interval re-arms it; a pad that has
+         * left owes a bounded number and then goes quiet. */
         if (s->since_descriptor >= COMPAD_DESCRIPTOR_EVERY)
             want[i] |= CE_SEND_DESCRIPTOR;
+
+        if (!s->present)
+            continue;
+
+        if (s->since_send < 255)
+            s->since_send++;
 
         if (s->since_send >= COMPAD_KEEPALIVE_EVERY)
         {
@@ -645,7 +666,6 @@ static void compad_platform_init(int argc, const char **argv)
     ARG_UNUSED(argv);
 
     memset(slots, 0, sizeof(slots));
-    memset(rumble, 0, sizeof(rumble));
     compad_init(&rx_dec);
 }
 
@@ -716,7 +736,6 @@ static void compad_on_device_disconnected(uni_hid_device_t *d)
     send_state((uint8_t)idx);
 
     memset(&slots[idx], 0, sizeof(slots[idx]));
-    memset(&rumble[idx], 0, sizeof(rumble[idx]));
 
     /*
      * Then say it has gone, and keep saying it for a couple of
@@ -727,7 +746,7 @@ static void compad_on_device_disconnected(uni_hid_device_t *d)
      * Bounded, unlike the repeat for a pad that is present, because an
      * empty slot has nothing further to say.
      */
-    slots[idx].gone = COMPAD_GONE_NOTICES;
+    slots[idx].owed = COMPAD_GONE_NOTICES;
     send_descriptor((uint8_t)idx);
 }
 
@@ -775,10 +794,6 @@ static void compad_on_controller_data(uni_hid_device_t *d,
         return;
 
     gp = &ctl->gamepad;
-
-    /* Carried on the descriptor repeat rather than announced, because
-     * a battery moves over hours and that repeat is five a second. */
-    slots[idx].battery = ctl->battery;
 
     compad_map(gp->dpad, gp->buttons, gp->misc_buttons, gp->axis_x,
                gp->axis_y, gp->axis_rx, gp->axis_ry, gp->brake, gp->throttle,
