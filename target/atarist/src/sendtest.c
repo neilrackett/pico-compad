@@ -96,7 +96,7 @@ static void blast(int dev, const char *name)
 
 int main(void)
 {
-    printf("COMpad transmit test\r\n");
+    printf("COMpad %s transmit test\r\n", COMPAD_VERSION);
     printf("watch the adapter's USB console for what arrives\r\n");
 
     if (!stport_has_bconmap())

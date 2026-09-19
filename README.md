@@ -1,6 +1,6 @@
 # COMpad
 
-Connect modern gamepads to retro computers using RS-232, by [Neil Rackett](https://neilrackett.com)
+Connect modern Bluetooth gamepads to retro computers using RS-232, by [Neil Rackett](https://neilrackett.com)
 
 ## Introduction
 

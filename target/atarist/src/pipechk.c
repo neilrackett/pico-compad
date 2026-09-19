@@ -155,7 +155,8 @@ int main(void)
     stport_configure();
     compad_init(&d);
 
-    printf("COMpad pipe check: AUX at %d 8N1\r\n", COMPAD_BAUD);
+    printf("COMpad %s pipe check: AUX at %d 8N1\r\n", COMPAD_VERSION,
+           COMPAD_BAUD);
 
     /* A short sample, ending in a verdict. */
     for (ticks = 0; ticks < TIMEOUT_TICKS && s.frames < ENOUGH_FRAMES; ticks++)
