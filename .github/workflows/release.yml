@@ -1,0 +1,172 @@
+name: Release
+
+# Rolling release: build both halves, tag the commit, move the
+# lightweight "latest" tag onto it, and replace the files on the
+# "latest" release. The release's title and body are left exactly as
+# they are, since `gh release upload` touches assets only, and the
+# asset names never change, so a download link handed to someone keeps
+# working.
+#
+# VERSIONING
+#
+# version.txt is the version, exactly as md-doom and md-sidepad do it.
+# This workflow reads it and never writes it: both halves of the build
+# already read that file, the ST Makefile and rp/CMakeLists.txt, and
+# the install banner already comes from it, so the tag, the banner and
+# the tree cannot disagree.
+#
+# To release a new version, edit version.txt and merge. Merging without
+# editing it rebuilds and republishes under the version that is already
+# there, which is what a rolling "latest" release is for: the tag stays
+# where it is and the assets are replaced.
+
+on:
+  # Anything landing on main is a release: a merge, or a direct push.
+  # Tag pushes do not match a branch filter, so the tags this workflow
+  # creates cannot trigger it again.
+  push:
+    branches:
+      - main
+    # A prose-only push cannot change a binary, and this repository
+    # writes a lot of prose; republishing identical assets for a typo
+    # fix would be noise. GitHub still runs the job when a push touches
+    # anything else as well, and workflow_dispatch forces one by hand.
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Two merges in quick succession would otherwise race: both move the
+# latest tag and clobber the same assets, and the loser would decide
+# what the release ends up holding. Newest commit wins instead.
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+env:
+  # stcmd runs docker with -it unless this is set, and a runner has no
+  # terminal.
+  STCMD_NO_TTY: 1
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # The push trigger already filters to main; this is what stops a
+    # manual dispatch from some other branch tagging and releasing it.
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v5
+        with:
+          # Everything the firmware needs is in lib/, and the Pico SDK
+          # and Bluepad32 carry submodules of their own, so recursing is
+          # required for the build to succeed rather than a
+          # convenience.
+          submodules: recursive
+          # Tags, so the job can tell whether version.txt names one
+          # that already exists. Checkout fetches none of them without
+          # a full clone, and without them every run would think its
+          # version was new and fail trying to create the tag twice.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Host tests
+        # Decoder, encoder, mapping and the harness socket. Needs
+        # nothing but a compiler and Node, so it runs first and fails
+        # fast. `test-gamepad` is not here: it is the only target with a
+        # node_modules dependency and it needs an emulator as well.
+        run: make test-host
+
+      - name: Read the version
+        # Straight out of version.txt, unmodified. Bumping it is a
+        # maintainer's decision made in a commit, not something a merge
+        # does on its way past.
+        run: |
+          VERSION=$(tr -d '[:space:]' < version.txt)
+
+          case "$VERSION" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *) echo "version.txt does not hold a vX.Y.Z version: $VERSION"; exit 1 ;;
+          esac
+
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Releasing $VERSION."
+
+      - name: Install the Atari ST toolkit
+        run: curl -sL https://github.com/sidecartridge/atarist-toolkit-docker/releases/latest/download/install_atarist_toolkit_docker.sh | bash
+
+      - name: Build the ST binaries
+        run: stcmd make st
+
+      - name: Install the Arm toolchain
+        # Everything else the firmware needs is in lib/, so this is the
+        # whole of it: CMake is already on the runner.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi \
+                                  libstdc++-arm-none-eabi-newlib
+
+      - name: Build the firmware
+        run: make firmware
+
+      - name: Collect what goes onto hardware
+        # The list lives in the Makefile's DIST_FILES and nowhere else,
+        # so this step cannot disagree with it. A missing file names the
+        # command that makes it and fails the job.
+        run: make dist
+
+      - name: Tag it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # An unchanged version.txt means a rebuild of the same
+          # release, so the tag stays where it is and only the assets
+          # are replaced. Moving it would point it at a commit whose
+          # binaries had never been published under it.
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "$VERSION already exists; leaving it where it is."
+            exit 0
+          fi
+
+          # Through the API rather than `git push`: pushing a tag is
+          # refused when the commit it points at touches
+          # .github/workflows and the token has no workflow scope, which
+          # is exactly the commit that adds these files.
+          gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$VERSION" -f sha="$GITHUB_SHA" --silent
+          echo "Tagged $VERSION."
+
+      - name: Move the latest tag onto this commit
+        # The "latest" release is attached to this tag, so moving it
+        # keeps the release's source link pointing at the commit the
+        # attached binaries were actually built from. PATCH first
+        # because the tag already exists; POST covers a repository where
+        # it does not yet.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/latest" \
+            -f sha="$GITHUB_SHA" -F force=true --silent \
+            || gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+                 -f ref=refs/tags/latest -f sha="$GITHUB_SHA" --silent
+
+      - name: Replace the files on the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view latest >/dev/null 2>&1 \
+            || gh release create latest --title "COMpad" --notes "Rolling build of the adapter firmware and the ST programs."
+          gh release upload latest \
+            dist/compad.uf2 \
+            dist/COMPAD.PRG \
+            dist/XPADVIEW.TOS \
+            dist/PIPECHK.TOS \
+            dist/SENDTEST.TOS \
+            --clobber
+          echo "Published $VERSION to the latest release."

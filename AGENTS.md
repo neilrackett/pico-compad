@@ -135,6 +135,25 @@ every host test and round tripped against the ST's own decoder while
 being wired into the ST the wrong way round, and the emulator could not
 have told you. It runs on hardware now, which nothing here did before.
 
+**CI builds everything and tests only half.**
+`.github/workflows/pr.yml` runs `make test-host`, `stcmd make st` and
+`make firmware` on every pull request, and `release.yml` runs the same
+before publishing. Neither runs `make test`: five of its six targets
+boot Hatari, and a runner has no emulator and no TOS image. Those are
+the targets that prove residency, the cookie jar, the live link and a
+simulated gamepad end to end, so a green tick means it builds and the
+host logic holds, and **`make test` locally is still what says it
+works**.
+
+Releases are rolling. Anything landing on `main` that touches more than
+prose is built, tagged and published to the `latest` release.
+**`version.txt` is the version**, the way md-doom and md-sidepad do it:
+the workflow reads it and never writes it, so the tag, the install
+banner and the tree cannot disagree. Releasing a new version is editing
+that file in a commit. Merging without editing it rebuilds and
+republishes under the version already there, leaving the tag where it
+is and replacing the assets, which is what a rolling release is for.
+
 The emulated targets must not run concurrently, and the Makefile is
 marked .NOTPARALLEL rather than relying on nobody passing -j. Not
 because of a shared port, which is the obvious guess and wrong: none of

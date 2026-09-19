@@ -1,0 +1,82 @@
+name: PR
+
+# Does it still work? This runs the same steps release.yml does, minus
+# the versioning and the publishing, so a pull request that would break
+# the release fails here instead. It tags nothing, publishes nothing and
+# keeps no artifacts.
+#
+# What a runner cannot do is the emulated half. `make test` boots Hatari
+# for five of the six targets, and those are the ones that prove
+# residency, the cookie jar, the live link and a simulated gamepad end
+# to end. They need an emulator and a TOS image; a runner has neither.
+# So a green tick here means it builds and the host logic holds, and
+# `make test` locally is still what says it works.
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Read-only: this workflow runs code from a contributor's branch, so it
+# gets nothing it does not need. release.yml holds the write token.
+permissions:
+  contents: read
+
+# A force-push mid-review should not leave two builds racing to report.
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # stcmd runs docker with -it unless this is set, and a runner has no
+  # terminal.
+  STCMD_NO_TTY: 1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v5
+        with:
+          # Everything the firmware needs is in lib/, and the Pico SDK
+          # and Bluepad32 carry submodules of their own, so recursing is
+          # required for the build to succeed rather than a
+          # convenience.
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Host tests
+        # The default goal. Decoder, encoder, mapping and the harness
+        # socket, all of which need only a compiler and Node, so this
+        # runs first and fails fast.
+        run: make test-host
+
+      - name: Install the Atari ST toolkit
+        # Generates /usr/local/bin/stcmd, which runs the m68k build in a
+        # container. The installer picks the image for the runner's
+        # architecture, so this is the x86_64 image here and an arm64
+        # one on a developer's Mac; both carry m68k-atari-mint-gcc.
+        run: curl -sL https://github.com/sidecartridge/atarist-toolkit-docker/releases/latest/download/install_atarist_toolkit_docker.sh | bash
+
+      - name: Build the ST binaries
+        # COMPAD.PRG and the three bring-up tools, with warnings fatal.
+        # This is where a 68000-only mistake surfaces.
+        run: stcmd make st
+
+      - name: Install the Arm toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi \
+                                  libstdc++-arm-none-eabi-newlib
+
+      - name: Build the firmware
+        # A cross build rather than a check, which is why it is not part
+        # of `make test`. It still belongs here: the firmware and the ST
+        # provider share protocol.h, so a change to the wire contract
+        # that only one end was updated for fails at this step.
+        run: make firmware
