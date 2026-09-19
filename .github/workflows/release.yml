@@ -72,7 +72,7 @@ jobs:
           # version was new and fail trying to create the tag twice.
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # 22, not 20: test/server_test.js drives the harness through
           # the global WebSocket client, which Node only enabled by
