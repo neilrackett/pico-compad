@@ -266,8 +266,16 @@ MFP through a level shifter.
 As atarist-xpad: C89-friendly, Allman braces, 4 spaces, `-Wall -Wextra
 -Werror` clean on gcc 4.6.4 for the target.
 
-Harness JavaScript is plain Node with no dependencies until a phase
-genuinely needs one, and it is **ES modules throughout**: `package.json`
+Harness JavaScript needs **Node 22.4 or later**, which `package.json`'s
+engines field states. `test/server_test.js` drives the harness through
+Node's own global `WebSocket` client, and that was only available
+without a flag from 22.4: on an older Node the file dies with
+"WebSocket is not defined" a hundred lines in, which reads as a broken
+test rather than a Node too old to run it. The first CI run found
+exactly that, so the file now checks and says so.
+
+Harness JavaScript is otherwise plain Node with no dependencies until a
+phase genuinely needs one, and it is **ES modules throughout**: `package.json`
 sets `"type": "module"`, so every `.js` here is a module and there is no
 `.mjs` to explain. Import Node builtins with the `node:` prefix, and
 remember `__dirname` does not exist: use `import.meta.dirname`. Keeping

@@ -48,7 +48,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # 22, not 20: test/server_test.js drives the harness through
+          # the global WebSocket client, which Node only enabled by
+          # default in 22.4. On 20 it is a ReferenceError, and the
+          # first CI run found exactly that.
+          node-version: '22'
 
       - name: Host tests
         # The default goal. Decoder, encoder, mapping and the harness

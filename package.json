@@ -5,7 +5,7 @@
   "description": "Dev harness for COMpad: browser and simulated gamepad sources feeding the ST provider.",
   "type": "module",
   "engines": {
-    "node": ">=20.11"
+    "node": ">=22.4"
   },
   "license": "GPL-3.0-or-later",
   "dependencies": {

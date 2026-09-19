@@ -23,6 +23,22 @@ import path from 'node:path';
 const PORT = 8233; // not 8232: a stray browser tab may still hold that
 let failures = 0;
 
+/*
+ * The client half of this test is Node's own global WebSocket, which
+ * only became available without a flag in Node 22.4. Say so plainly:
+ * on an older Node this file dies with "WebSocket is not defined" a
+ * hundred lines further down, which reads like a broken test rather
+ * than a Node too old to run it. The first CI run hit exactly that.
+ */
+if (typeof WebSocket === 'undefined') {
+  console.error(
+    `This test needs Node's global WebSocket client, which is available\n` +
+      `from Node 22.4. This is ${process.version}. Upgrade Node, or run it\n` +
+      `with --experimental-websocket on 21 and 22.0 to 22.3.`,
+  );
+  process.exit(1);
+}
+
 function check(ok, what) {
   console.log(`${ok ? '   ' : '!! '}${what}${ok ? '' : '   FAILED'}`);
   if (!ok) failures++;
