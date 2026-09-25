@@ -25,9 +25,13 @@ through the cookie jar with axes, triggers and pad type intact.
 **Phase 3 works on real hardware.** A Bluetooth controller paired to a
 Pico W, through a MAX3232 into a Mega STE's Modem 1, reaches an `XPAD`
 block that `XPADVIEW.TOS` reads back with buttons, sticks and triggers
-intact. Phases 4 and 5, rumble, port detection by ping, hotplug,
-battery and the link budget, are written and pass under emulation but
-have not been tried on hardware: see [docs/roadmap.md](docs/roadmap.md).
+intact.
+
+**So does phase 4.** Rumble drives each motor on its own and both
+together, and the ping finds the adapter on Modem 2 as well as Modem 1.
+Phase 5, hotplug, battery, the link budget and more than one pad at
+once, passes under emulation but has not been tried on hardware yet:
+see [docs/roadmap.md](docs/roadmap.md).
 
 To build one, see [docs/wiring.md](docs/wiring.md). A MAX3232 is the
 only part you need; the status LED and the forget button are optional

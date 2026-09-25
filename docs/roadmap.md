@@ -13,14 +13,18 @@ Pico W reaches an `XPAD` block on a real Mega STE over a real wire, and
 `XPADVIEW.TOS` shows it moving. That is the exit criteria met, and it is
 the first thing in this project to have run anywhere but an emulator.
 
-**Phases 4 and 5 are written but unproven on hardware.** Phase 4 is
-rumble and the ping that finds which serial port the adapter is on,
-both built on the host-to-adapter direction that nothing implemented
-before. Phase 5 is what a consumer can see: hotplug, battery, the link
-budget that stops four pads overrunning the tick, and host tests for
-the two optional components. All of it passes under emulation; no pad
-has buzzed yet, no port has been found by ping on a real machine, and
-nothing here has ever had more than one pad on it.
+**Phase 4 works on hardware.** It is rumble and the ping that finds
+which serial port the adapter is on, both built on the host-to-adapter
+direction that nothing implemented before. An Xbox One pad buzzes left,
+right and both from `XPADVIEW.TOS`, and the ping finds the adapter on
+Modem 2 as well as Modem 1.
+
+**Phase 5 is written but unproven on hardware.** It is what a consumer
+can see: hotplug, battery, the link budget that stops four pads
+overrunning the tick, and host tests for the two optional components.
+All of it passes under emulation, but nothing here has ever had more
+than one pad on it, and no pad has yet been switched off and on again
+in front of a real ST.
 
 Every phase here targets the Atari ST family. Other platforms are not
 on this roadmap at all: if one happens, it arrives as a new directory

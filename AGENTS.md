@@ -187,10 +187,12 @@ And a real Bluetooth controller has been driven through
 `harness/pad.html` into the viewer by hand, which is the half no
 automation can cover.
 
-Phases 4 and 5 are written and pass under emulation, and none of it has
-run on hardware: no pad has buzzed, no port has been found by ping, and
-nothing has ever had more than one pad on it. Do not describe any of
-that as proven.
+Phase 4 works on hardware too: an Xbox One pad buzzes left, right and
+both from `XPADVIEW.TOS`, and the ping finds the adapter on Modem 2 as
+well as Modem 1. Phase 5 passes under emulation and has not been proven
+on hardware: nothing has ever had more than one pad on it, and hotplug
+and battery have not been seen on a real ST. Do not describe those as
+proven.
 
 Phase 5 is the capabilities a consumer can see: hotplug, battery, the
 link budget and the two optional components. The rule it came from is
