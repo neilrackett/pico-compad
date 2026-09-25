@@ -1,5 +1,7 @@
 # COMpad
 
+<img src="./docs/hero.webp" width="640" alt="Connect modern Bluetooth gamepads to retro computers" />
+
 Connect modern Bluetooth gamepads to retro computers using RS-232, by [Neil Rackett](https://neilrackett.com)
 
 ## Introduction
@@ -72,15 +74,15 @@ bits move in `XPADVIEW.TOS`.
 
 ## Layout
 
-| Path              | Contents                                                           |
-| ----------------- | ------------------------------------------------------------------ |
-| `rp/`             | Pico W adapter firmware: Bluepad32 in, COMpad frames out           |
-| `target/atarist/` | ST provider, the wire-protocol decoder, the test programs, and `XPADVIEW.TOS` built from the submodule |
+| Path              | Contents                                                                                                                            |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `rp/`             | Pico W adapter firmware: Bluepad32 in, COMpad frames out                                                                            |
+| `target/atarist/` | ST provider, the wire-protocol decoder, the test programs, and `XPADVIEW.TOS` built from the submodule                              |
 | `harness/`        | dev rig: frame writer, server, keyboard and gamepad pages, `wire.js` for loopback timing, `listen.js` to decode an adapter's output |
-| `test/`           | host tests for the decoder, Hatari end-to-end runners              |
-| `docs/`           | protocol, hardware, roadmap, design notes                          |
-| `dist/`           | `make dist` output: everything that goes onto hardware, listed as it runs |
-| `lib/`            | submodules: `xpad` at v1.1.2, plus `pico-sdk`, `pico-extras` and `bluepad32` |
+| `test/`           | host tests for the decoder, Hatari end-to-end runners                                                                               |
+| `docs/`           | protocol, hardware, roadmap, design notes                                                                                           |
+| `dist/`           | `make dist` output: everything that goes onto hardware, listed as it runs                                                           |
+| `lib/`            | submodules: `xpad` at v1.1.2, plus `pico-sdk`, `pico-extras` and `bluepad32`                                                        |
 
 Two different things are called xpad, and it is worth keeping them
 apart. [atarist-xpad](https://github.com/neilrackett/atarist-xpad) is
@@ -91,13 +93,13 @@ the development harness and never by anything that ships.
 
 ## Documentation
 
-| Document                             | Contents                                                  |
-| ------------------------------------ | --------------------------------------------------------- |
-| [docs/protocol.md](docs/protocol.md) | the wire contract: frame types, layouts, timing budget    |
+| Document                             | Contents                                                     |
+| ------------------------------------ | ------------------------------------------------------------ |
+| [docs/protocol.md](docs/protocol.md) | the wire contract: frame types, layouts, timing budget       |
 | [docs/wiring.md](docs/wiring.md)     | how to build one: four wires minimum, extras marked optional |
-| [docs/hardware.md](docs/hardware.md) | building the adapter, connectors, which socket is the MFP |
-| [docs/roadmap.md](docs/roadmap.md)   | phases 0 to 5, what each one proves                       |
-| [docs/design.md](docs/design.md)     | why serial rather than MIDI, layering, constraints        |
+| [docs/hardware.md](docs/hardware.md) | building the adapter, connectors, which socket is the MFP    |
+| [docs/roadmap.md](docs/roadmap.md)   | phases 0 to 5, what each one proves                          |
+| [docs/design.md](docs/design.md)     | why serial rather than MIDI, layering, constraints           |
 
 Working practices for contributors and agents are in
 [AGENTS.md](AGENTS.md).
