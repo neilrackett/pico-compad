@@ -2,17 +2,19 @@
 
 <img src="./docs/hero.webp" width="640" alt="Connect modern Bluetooth gamepads to retro computers" />
 
-Connect modern gamepads to retro computers using RS-232, by [Neil Rackett](https://neilrackett.com)
+Connect modern gamepads to retro computers using Bluetooth and RS-232, by [Neil Rackett](https://neilrackett.com)
 
 ## Introduction
 
-COMpad lets you play your Atari ST with the same wireless controller you use on your console or PC. It's a little adapter you build from a Raspberry Pi Pico W and a couple of pounds' worth of parts, which plugs into your ST's serial ("Modem") port: pair almost any Bluetooth gamepad with it (Xbox One/Series, DualShock, DualSense, Switch Pro, 8BitDo, and more) and your ST sees every button, both analogue sticks and the triggers, with rumble too.
+COMpad lets you play games on your Atari ST with the same wireless controller you use on your console or PC. It's a little adapter you build from a Raspberry Pi Pico W and a couple of pounds' worth of parts, which plugs into your ST's serial ("Modem") port: pair almost any Bluetooth gamepad with it (Xbox One/Series, DualShock, DualSense, Switch Pro, 8BitDo, and more) and your ST sees every button, both analogue sticks and the triggers, with rumble too.
 
 Up to four pads can be connected at once. Once a pad has been paired it reconnects by itself whenever you switch it on, and there's nothing to configure on the ST: just put `COMPAD.PRG` in your `AUTO` folder and it finds the adapter on whichever serial port it's plugged into.
 
 Pads are published using [Xpad](https://downloads.neilrackett.com/atarist-xpad), the open standard for modern gamepads on the Atari ST, so any software written for Xpad can use them directly, and Xpad's `XPADEMU.PRG` turns your pad into a joystick and mouse for everything else.
 
-COMpad is built for the Atari ST family, but the link between the adapter and the computer is deliberately simple: fixed-length frames of raw controller state over a serial line. Anything with a UART and a few hundred bytes to spare could read it, so other machines can gain support of their own later (see [What's next?](#whats-next)).
+COMpad is designed to work with any retro computer with a serial port, with the link between the adapter and the computer kept deliberately simple: fixed-length frames of raw controller state over a serial line. Anything with a UART and a few hundred bytes to spare could read it, so any machine can gain support using the appropriate driver (see [What's next?](#whats-next)).
+
+**The first system to be supported is the Atari ST.**
 
 ## Making
 
@@ -20,7 +22,6 @@ To build your own COMpad, you will need:
 
 - Raspberry Pi Pico W or Pico 2 W (a plain Pico has no radio, so it can't do Bluetooth)
 - MAX3232 RS-232 module with a female DE-9 connector
-- Atari ST, STE, Mega ST or Mega STE
 - DE-9 to DB25 adapter, for anything other than a Mega STE
 - USB power supply for the Pico
 - Optionally
@@ -31,7 +32,13 @@ Check the chip really is a MAX**3232** and not a MAX232: the MAX232 needs 5V and
 
 All the information you need for wiring everything together is in [docs/wiring.md](docs/wiring.md).
 
-## Installation
+## Currently supported systems are:
+
+- Atari ST/STE, Mega ST/STE (TT and Falcon should work but currently untested)
+
+If you'd like to add drivers for your favourite retro system, please don't hesitate to send a PR.
+
+## Installation (Atari ST)
 
 1. Download `COMPAD.PRG`, `XPADVIEW.TOS` and the firmware for your Pico, `compad-w.uf2` for a Pico W or `compad-2w.uf2` for a Pico 2 W, from the [latest release page](https://github.com/neilrackett/pico-compad/releases/tag/latest).
 2. Hold the BOOTSEL button on your Pico while you plug it into your computer, then copy the firmware onto the drive that appears.
