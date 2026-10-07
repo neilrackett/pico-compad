@@ -17,7 +17,7 @@
 #   make test-wire       a real UART, loopback: the only physical test
 #   make test            all of the above, in order
 #   make simulator       drive it yourself, in a window
-#   make firmware        build the Pico W adapter firmware
+#   make firmware        build the adapter firmware, Pico W and Pico 2 W
 #   make dist            collect what you flash or install into dist/
 #   make tos             fetch EmuTOS into build/tos (the tests do this
 #                        for you; the target is for priming a machine
@@ -85,7 +85,8 @@ DIST = dist
 ST_BUILD = STCMD_NO_TTY=1 stcmd make st
 
 define DIST_FILES
-rp/build/compad.uf2|flash: hold BOOTSEL, plug in, copy it across|make firmware
+rp/build/compad.uf2|flash a Pico W: hold BOOTSEL, plug in, copy it across|make firmware
+rp/build-2w/compad-2w.uf2|flash a Pico 2 W, the same way|make firmware
 target/atarist/build/COMPAD.PRG|install: into the ST's AUTO folder|$(ST_BUILD)
 target/atarist/build/XPADVIEW.TOS|run it to watch the pad|$(ST_BUILD)
 target/atarist/build/PIPECHK.TOS|run it first: prints raw bytes off the wire|$(ST_BUILD)
@@ -110,11 +111,20 @@ dist:
 # The adapter firmware. Everything it needs is in lib/, so this wants
 # nothing installed but CMake and arm-none-eabi-gcc, and it never runs
 # as part of `test`: it is a cross build, not a check.
+#
+# Once per board, each in its own build directory, since a CMake build
+# directory holds one board for life. Both name the board rather than
+# leaning on the default, so a directory configured by hand for the
+# other one cannot quietly put the wrong image under the right name.
 firmware:
-	@cmake -B rp/build -S rp
+	@cmake -B rp/build -S rp -DPICO_BOARD=pico_w
 	@cmake --build rp/build -j
+	@cmake -B rp/build-2w -S rp -DPICO_BOARD=pico2_w
+	@cmake --build rp/build-2w -j
 	@echo
-	@echo "flash rp/build/compad.uf2: hold BOOTSEL, plug in, copy it across"
+	@echo "flash rp/build/compad.uf2 on a Pico W, or"
+	@echo "rp/build-2w/compad-2w.uf2 on a Pico 2 W:"
+	@echo "hold BOOTSEL, plug in, copy it across"
 
 test-decode:
 	@test/run-decode.sh
@@ -158,5 +168,5 @@ $(BUILD):
 	@mkdir -p $(BUILD)
 
 clean:
-	rm -rf $(BUILD) $(DIST) rp/build
+	rm -rf $(BUILD) $(DIST) rp/build rp/build-2w
 	$(MAKE) -C target/atarist clean

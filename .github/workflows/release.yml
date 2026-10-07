@@ -168,6 +168,7 @@ jobs:
             || gh release create latest --title "COMpad" --notes "Rolling build of the adapter firmware and the ST programs."
           gh release upload latest \
             dist/compad.uf2 \
+            dist/compad-2w.uf2 \
             dist/COMPAD.PRG \
             dist/XPADVIEW.TOS \
             dist/PIPECHK.TOS \

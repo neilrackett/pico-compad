@@ -5,9 +5,10 @@
 #
 #   cmake -B build -S . && cmake --build build
 #
-# Produces build/compad.uf2. PICO_SDK_PATH and the Bluepad32 root both
-# point at this repository's submodules, so a fresh clone needs nothing
-# installed but CMake and arm-none-eabi-gcc.
+# Produces build/compad.uf2, or compad-2w.uf2 with -DPICO_BOARD=pico2_w.
+# PICO_SDK_PATH and the Bluepad32 root both point at this repository's
+# submodules, so a fresh clone needs nothing installed but CMake and
+# arm-none-eabi-gcc.
 
 cmake_minimum_required(VERSION 3.13)
 
@@ -68,6 +69,14 @@ add_executable(compad
     src/main.c
     src/compad_platform.c
 )
+
+# One UF2 per board, named so the two cannot be mixed up in dist/ or on
+# the releases page. A Pico W image will not boot on a Pico 2 W, nor the
+# other way round. The Pico W keeps the plain name, so download links
+# already handed out keep working.
+if(PICO_BOARD STREQUAL "pico2_w")
+    set_target_properties(compad PROPERTIES OUTPUT_NAME compad-2w)
+endif()
 
 # One version, from the same file the ST side reads, so the UF2 can say
 # which build it is. CONFIGURE_DEPENDS is what stops a stale configure

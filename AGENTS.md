@@ -51,7 +51,7 @@ three include paths. Keep them in step.
 ```
 make                               same as test-host: fast, no toolchain
 make test-host                     host tests only, no emulator
-make firmware                      the Pico W adapter firmware
+make firmware                      adapter firmware, Pico W and Pico 2 W
 make dist                          what you flash or install, in dist/
 STCMD_NO_TTY=1 stcmd make st       build the ST binaries
 make test-decode                   compad.c's own assertions, on the ST
