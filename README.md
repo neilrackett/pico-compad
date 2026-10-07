@@ -2,118 +2,158 @@
 
 <img src="./docs/hero.webp" width="640" alt="Connect modern Bluetooth gamepads to retro computers" />
 
-Connect modern Bluetooth gamepads to retro computers using RS-232, by [Neil Rackett](https://neilrackett.com)
+Connect modern gamepads to retro computers using RS-232, by [Neil Rackett](https://neilrackett.com)
 
 ## Introduction
 
-COMpad enables you to connect Bluetooth gamepads to retro computers using RS-232, via a Raspberry Pi Pico W or Pico 2 W microcontroller connected to the serial/modem/COM port.
+COMpad lets you play your Atari ST with the same wireless controller you use on your console or PC. It's a little adapter you build from a Raspberry Pi Pico W and a couple of pounds' worth of parts, which plugs into your ST's serial ("Modem") port: pair almost any Bluetooth gamepad with it (Xbox One/Series, DualShock, DualSense, Switch Pro, 8BitDo, and more) and your ST sees every button, both analogue sticks and the triggers, with rumble too.
 
-The transport is deliberately simple, using fixed-length frames of raw controller state over a UART. That is what makes it portable.
+Up to four pads can be connected at once. Once a pad has been paired it reconnects by itself whenever you switch it on, and there's nothing to configure on the ST: just put `COMPAD.PRG` in your `AUTO` folder and it finds the adapter on whichever serial port it's plugged into.
 
-The current version is built for the Atari ST family: the adapter connects to the modem/serial port and a resident provider publishes every connected gamepad as an `XPAD` block in the cookie jar, using the interface set out in the [Xpad](https://github.com/neilrackett/atarist-xpad) library. A modern gamepad on one end, an `XPAD` block on the other, RS-232 in between.
+Pads are published using [Xpad](https://downloads.neilrackett.com/atarist-xpad), the open standard for modern gamepads on the Atari ST, so any software written for Xpad can use them directly, and Xpad's `XPADEMU.PRG` turns your pad into a joystick and mouse for everything else.
 
-The wire protocol, though, is deliberately platform-neutral: any machine with a serial port and a few hundred bytes of code could consume the same frames, so an Amiga, X68000 or anything else with a UART can gain a target of its own later, each supplying its own thin provider. None of those exist yet, but if you'd like to add something for your favourite retro platform, please don't hesitate to submit a PR: see [docs/design.md](docs/design.md) for more information.
+COMpad is built for the Atari ST family, but the link between the adapter and the computer is deliberately simple: fixed-length frames of raw controller state over a serial line. Anything with a UART and a few hundred bytes to spare could read it, so other machines can gain support of their own later (see [What's next?](#whats-next)).
 
-## Status
+## Making
 
-Phases 0 to 2 pass under emulation. A browser keyboard, a simulated
-gamepad, or **a real Bluetooth controller** driven through
-[@mesmotronic/xpad](https://www.npmjs.com/package/@mesmotronic/xpad)
-reaches an `XPAD` block on the ST, and xpad's own viewer reads it back
-through the cookie jar with axes, triggers and pad type intact.
+To build your own COMpad, you will need:
 
-**Phase 3 works on real hardware.** A Bluetooth controller paired to a
-Pico W, through a MAX3232 into a Mega STE's Modem 1, reaches an `XPAD`
-block that `XPADVIEW.TOS` reads back with buttons, sticks and triggers
-intact.
+- Raspberry Pi Pico W or Pico 2 W (a plain Pico has no radio, so it can't do Bluetooth)
+- MAX3232 RS-232 module with a female DE-9 connector
+- Atari ST, STE, Mega ST or Mega STE
+- DE-9 to DB25 adapter, for anything other than a Mega STE
+- USB power supply for the Pico
+- Optionally
+  - LED with a 330Ω resistor
+  - Momentary push button
 
-**So does phase 4.** Rumble drives each motor on its own and both
-together, and the ping finds the adapter on Modem 2 as well as Modem 1.
-Phase 5, hotplug, battery, the link budget and more than one pad at
-once, passes under emulation but has not been tried on hardware yet:
-see [docs/roadmap.md](docs/roadmap.md).
+Check the chip really is a MAX**3232** and not a MAX232: the MAX232 needs 5V and won't work from the Pico's 3.3V supply.
 
-To build one, see [docs/wiring.md](docs/wiring.md). A MAX3232 is the
-only part you need; the status LED and the forget button are optional
-and need no build flag to leave out.
+All the information you need for wiring everything together is in [docs/wiring.md](docs/wiring.md).
+
+## Installation
+
+1. Download `COMPAD.PRG`, `XPADVIEW.TOS` and the firmware for your Pico, `compad.uf2` for a Pico W or `compad-2w.uf2` for a Pico 2 W, from the [latest release page](https://github.com/neilrackett/pico-compad/releases/tag/latest).
+2. Hold the BOOTSEL button on your Pico while you plug it into your computer, then copy the firmware onto the drive that appears.
+3. Copy `COMPAD.PRG` into the `AUTO` folder of your ST's boot disk.
+4. Plug the adapter into your ST, power the Pico from any USB supply, and switch on your ST.
+
+As your ST boots, you'll see `Xpad provider listening on Modem 1.`, or whichever port it found the adapter on, and you're ready to pair a controller.
+
+## Usage
+
+### Pairing a controller
+
+Put your controller into pairing mode and it will connect. There's no pairing button to press: the adapter looks for new pads whenever it has a free slot, and once a pad has paired, it reconnects on its own every time you switch it on.
+
+The Pico's onboard LED, and the external one if you fitted it, shows what the adapter is doing:
+
+| LED         | Meaning                              |
+| ----------- | ------------------------------------ |
+| Rapid flash | Looking for a new pad                |
+| Long blink  | Waiting for a known pad to come back |
+| Solid       | A pad is connected                   |
+
+If the external LED comes on solid as soon as the Pico is powered while the onboard one stays dark, the Bluetooth radio has failed to start. That's the main reason to fit the external LED: the onboard one can't light until the radio is running.
+
+To forget every paired pad, for example to move a controller to another machine, hold the button for two seconds. The LED changes from a long blink to a rapid flash to confirm it.
+
+### Checking your controller
+
+Run `XPADVIEW.TOS` to see every button, stick and trigger on your pad live.
+
+| Key     | Does                                    |
+| ------- | --------------------------------------- |
+| `1`-`4` | Choose which pad is shown               |
+| `(`     | Rumble the left motor for half a second |
+| `)`     | The same, right motor                   |
+| `*`     | The same, both                          |
+| `Q`     | Quit, and so does Escape                |
+
+The three rumble keys are the top row of the numeric keypad.
+
+### Playing games
+
+Software written for Xpad reads your pads directly, analogue sticks and all.
+
+For everything else, download `XPADEMU.PRG` from [Xpad's releases page](https://github.com/neilrackett/atarist-xpad/releases/tag/latest) and copy it into your `AUTO` folder **after** `COMPAD.PRG`, since it needs COMpad to be running first. Your first pad then works as a joystick in port 1, and its right stick as the mouse, with your real joystick and mouse still working alongside. Its settings, including which buttons fire, are described in the [Xpad README](https://github.com/neilrackett/atarist-xpad).
+
+## How it works
 
 ```
-make                 the default goal, same as test-host
-make test-host       host tests: decoder, encoder, mapping, harness socket
-make test-decode     compad.c's own assertions, run on the ST
-make test-serial     bytes cross the emulated link and frame up
-make test-provider   a resident provider publishes a pad, and another
-                     program reads it back through the cookie jar
-make test-live       the provider follows a sender that changes
-make test-gamepad    a simulated controller: axes, triggers, pad type
-make test            all six, in order
-make test-wire       a real UART, loopback: needs hardware
-make simulator       drive it yourself, in a window
-make firmware        build the Pico W adapter firmware
-make dist            collect what you flash or install into dist/
-make tos             fetch or locate EmuTOS, and print where it landed
-make clean           both halves
-
-STCMD_NO_TTY=1 stcmd make st      build the ST binaries
+Gamepad ──Bluetooth──► Pico W ──UART──► MAX3232 ──RS-232──► ST serial port
+                      Bluepad32         level shifter              │
+                                                                   ▼
+Your game ◄──── XPAD block, in the cookie jar ◄──── COMPAD.PRG ◄───┘
 ```
 
-`test-gamepad` drives the real [@mesmotronic/xpad](https://www.npmjs.com/package/@mesmotronic/xpad)
-library from a synthetic gamepad, so it covers what a keyboard cannot:
-signed axes, analogue triggers, and the positional face-button mapping.
-It needs `npm install` once.
+The Pico runs [Bluepad32](https://github.com/ricardoquesada/bluepad32), which takes care of Bluetooth and the differences between controllers, and sends the full state of each pad down the serial line as short fixed-length frames. Every frame carries the whole state rather than just what changed, so a frame damaged in transit is simply dropped and the next one puts everything right, with no handshaking to go wrong.
 
-`st` needs the [atarist-toolkit-docker](https://github.com/sidecartridge/atarist-toolkit-docker)
-container; the test targets need Hatari and Node on the host, so the
-two never run under the same command.
+On the ST, `COMPAD.PRG` stays resident and runs from the system timer, decoding frames from the serial port and publishing them as an Xpad block in the cookie jar, which is where games find it. Rumble travels the other way: a game asks Xpad for it, and COMpad sends a short frame back to the adapter, which drives the pad's motors.
 
-A TOS image is fetched on first use, so there is no setup step: EmuTOS
-lands in `build/tos/` and is reused after that. Set `$TOS` to point at
-a ROM of your own, which is the only way to test anything that depends
-on a real TOS version, since EmuTOS always reports itself as 2.06.
+When it installs, `COMPAD.PRG` pings each serial port in turn, the modem port first, and keeps the one that answers. If nothing answers, because the adapter is unplugged or not switched on yet, it falls back to the modem port, so switching the adapter on later still works.
 
-To drive it by hand, run `make simulator`, then open
-<http://localhost:8232> for the keyboard or
-<http://localhost:8232/pad.html> for a real controller, and watch the
-bits move in `XPADVIEW.TOS`.
+The wire protocol is described in [docs/protocol.md](docs/protocol.md), and the reasons it looks the way it does are in [docs/design.md](docs/design.md).
 
-## Layout
+## If nothing happens
 
-| Path              | Contents                                                                                                                            |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `rp/`             | Pico W adapter firmware: Bluepad32 in, COMpad frames out                                                                            |
-| `target/atarist/` | ST provider, the wire-protocol decoder, the test programs, and `XPADVIEW.TOS` built from the submodule                              |
-| `harness/`        | dev rig: frame writer, server, keyboard and gamepad pages, `wire.js` for loopback timing, `listen.js` to decode an adapter's output |
-| `test/`           | host tests for the decoder, Hatari end-to-end runners                                                                               |
-| `docs/`           | protocol, hardware, roadmap, design notes                                                                                           |
-| `dist/`           | `make dist` output: everything that goes onto hardware, listed as it runs                                                           |
-| `lib/`            | submodules: `xpad` at v1.1.2, plus `pico-sdk`, `pico-extras` and `bluepad32`                                                        |
+- **The adapter sends nothing until a pad is connected**, so an idle adapter and an unplugged one look the same from the ST. Get the LED solid before looking anywhere else.
+- **If one direction works but not the other**, the module's `TXD` and `RXD` are almost certainly swapped.
+- The [releases page](https://github.com/neilrackett/pico-compad/releases/tag/latest) also has `PIPECHK.TOS`, which shows the raw bytes arriving at your ST and looks for them on the other serial ports, and `SENDTEST.TOS`, which checks the other direction.
 
-Two different things are called xpad, and it is worth keeping them
-apart. [atarist-xpad](https://github.com/neilrackett/atarist-xpad) is
-the C library in `lib/xpad`, BSD-2-Clause, and it defines the `XPAD`
-block this publishes. [@mesmotronic/xpad](https://www.npmjs.com/package/@mesmotronic/xpad)
-is an unrelated npm package that reads browser gamepads, used only by
-the development harness and never by anything that ships.
+The [wiring guide](docs/wiring.md#when-nothing-arrives) goes through it step by step.
 
-## Documentation
+## Known limitations
 
-| Document                             | Contents                                                     |
-| ------------------------------------ | ------------------------------------------------------------ |
-| [docs/protocol.md](docs/protocol.md) | the wire contract: frame types, layouts, timing budget       |
-| [docs/wiring.md](docs/wiring.md)     | how to build one: four wires minimum, extras marked optional |
-| [docs/hardware.md](docs/hardware.md) | building the adapter, connectors, which socket is the MFP    |
-| [docs/roadmap.md](docs/roadmap.md)   | phases 0 to 5, what each one proves                          |
-| [docs/design.md](docs/design.md)     | why serial rather than MIDI, layering, constraints           |
+- Rumble only works through the modem port, which is Modem 1 on a Mega STE. If your adapter is on one of the Mega STE's other serial ports, COMpad will still find it, but rumble won't be available.
+- Finding the adapter means trying each port in turn, and TOS has no way to read back a port's baud rate. So if your adapter isn't on the modem port, any port tried before it is left at 19200 baud with no handshaking, which matters only if you have a modem or serial printer on it.
+- Only one Xpad provider can be installed at a time, so COMpad and [MD/Sidepad](https://github.com/neilrackett/md-sidepad) are alternatives rather than something to run together. Whichever is installed first is the one you get, and the other says so and steps aside.
+- Software that starts before the `AUTO` folder runs, such as apps that boot from a cartridge, won't see COMpad, because it isn't running yet.
+- `XPADEMU.PRG` reaches games through the system joystick and mouse handlers, so games that read the keyboard processor directly, which includes many original floppy games, won't see your pad as a joystick. Software written for Xpad is unaffected.
+- Development has focussed on Xbox One gamepads, so if you have a different controller, please let us know how you get on.
 
-Working practices for contributors and agents are in
-[AGENTS.md](AGENTS.md).
+## What's next?
 
-## Licence
+The wire protocol was designed so that any machine with a serial port and a few hundred bytes of code can read the same frames, which means an Amiga, an X68000 or anything else with a UART could gain support with nothing more than a small provider of its own. None of those exist yet, but if you'd like to add your favourite retro platform, please don't hesitate to submit a PR: [docs/design.md](docs/design.md) explains how the pieces fit together.
 
-GPL-3.0-or-later. COMpad is a standalone program on both ends of the
-wire, not a library games link against: consumers talk to it through
-[xpad](https://github.com/neilrackett/atarist-xpad), which stays
-BSD-2-Clause, so a game of any licence can read a COMpad-published pad
-without inheriting anything from here.
+Think you can help? Got an idea of your own? We'd love to hear from you, so why not let me know on [X](https://x.com/neilrackett) or submit a PR.
+
+## Building
+
+Clone with `--recursive`, or run `git submodule update --init --recursive` before your first build: the Pico SDK, Bluepad32 and Xpad all come from submodules in `lib/`.
+
+```bash
+# The adapter firmware: needs CMake and arm-none-eabi-gcc
+make firmware
+
+# The ST programs: needs atarist-toolkit-docker
+STCMD_NO_TTY=1 stcmd make st
+
+# Collect everything that goes onto hardware into dist/
+make dist
+```
+
+`make dist` prints each file it collects, along with what it's for and where it goes.
+
+`make firmware` builds for both boards: `rp/build/compad.uf2` for the Pico W and `rp/build-2w/compad-2w.uf2` for the Pico 2 W.
+
+The ST programs are built with [atarist-toolkit-docker](https://github.com/sidecartridge/atarist-toolkit-docker), which provides `stcmd`.
+
+### Layout
+
+| Path              | Contents                                                                |
+| ----------------- | ----------------------------------------------------------------------- |
+| `rp/`             | Pico W adapter firmware: Bluepad32 in, COMpad frames out                |
+| `target/atarist/` | `COMPAD.PRG`, the wire protocol decoder, and the ST tools               |
+| `docs/`           | Wiring, hardware, protocol and design notes                             |
+| `lib/`            | Submodules: `xpad` at v1.1.6, `pico-sdk`, `pico-extras` and `bluepad32` |
+
+Working practices for contributors are in [AGENTS.md](AGENTS.md).
+
+## License
+
+Source code is licensed under the GNU General Public License v3.0 or later. See [LICENSE](LICENSE) for the full text.
+
+COMpad is a standalone program at both ends of the wire, not a library games link against: software talks to it through [Xpad](https://github.com/neilrackett/atarist-xpad), included as the `lib/xpad` submodule, which is BSD-2-Clause. So a game under any licence can read a COMpad pad without inheriting anything from here.
 
 Copyright (c) 2026 Neil Rackett.
