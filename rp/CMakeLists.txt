@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # SPDX-FileCopyrightText: 2026 Neil Rackett
 
-# COMpad adapter firmware for the Pico W.
+# COMpad adapter firmware for the Pico W and Pico 2 W.
 #
 #   cmake -B build -S . && cmake --build build
 #
-# Produces build/compad.uf2, or compad-2w.uf2 with -DPICO_BOARD=pico2_w.
+# Produces build/compad-w.uf2, or compad-2w.uf2 with -DPICO_BOARD=pico2_w.
 # PICO_SDK_PATH and the Bluepad32 root both point at this repository's
 # submodules, so a fresh clone needs nothing installed but CMake and
 # arm-none-eabi-gcc.
@@ -72,10 +72,11 @@ add_executable(compad
 
 # One UF2 per board, named so the two cannot be mixed up in dist/ or on
 # the releases page. A Pico W image will not boot on a Pico 2 W, nor the
-# other way round. The Pico W keeps the plain name, so download links
-# already handed out keep working.
+# other way round.
 if(PICO_BOARD STREQUAL "pico2_w")
     set_target_properties(compad PROPERTIES OUTPUT_NAME compad-2w)
+else()
+    set_target_properties(compad PROPERTIES OUTPUT_NAME compad-w)
 endif()
 
 # One version, from the same file the ST side reads, so the UF2 can say

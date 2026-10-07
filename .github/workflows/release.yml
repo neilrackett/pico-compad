@@ -167,7 +167,7 @@ jobs:
           gh release view latest >/dev/null 2>&1 \
             || gh release create latest --title "COMpad" --notes "Rolling build of the adapter firmware and the ST programs."
           gh release upload latest \
-            dist/compad.uf2 \
+            dist/compad-w.uf2 \
             dist/compad-2w.uf2 \
             dist/COMPAD.PRG \
             dist/XPADVIEW.TOS \

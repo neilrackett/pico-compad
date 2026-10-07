@@ -33,7 +33,7 @@ All the information you need for wiring everything together is in [docs/wiring.m
 
 ## Installation
 
-1. Download `COMPAD.PRG`, `XPADVIEW.TOS` and the firmware for your Pico, `compad.uf2` for a Pico W or `compad-2w.uf2` for a Pico 2 W, from the [latest release page](https://github.com/neilrackett/pico-compad/releases/tag/latest).
+1. Download `COMPAD.PRG`, `XPADVIEW.TOS` and the firmware for your Pico, `compad-w.uf2` for a Pico W or `compad-2w.uf2` for a Pico 2 W, from the [latest release page](https://github.com/neilrackett/pico-compad/releases/tag/latest).
 2. Hold the BOOTSEL button on your Pico while you plug it into your computer, then copy the firmware onto the drive that appears.
 3. Copy `COMPAD.PRG` into the `AUTO` folder of your ST's boot disk.
 4. Plug the adapter into your ST, power the Pico from any USB supply, and switch on your ST.
@@ -135,7 +135,7 @@ make dist
 
 `make dist` prints each file it collects, along with what it's for and where it goes.
 
-`make firmware` builds for both boards: `rp/build/compad.uf2` for the Pico W and `rp/build-2w/compad-2w.uf2` for the Pico 2 W.
+`make firmware` builds for both boards: `rp/build/compad-w.uf2` for the Pico W and `rp/build-2w/compad-2w.uf2` for the Pico 2 W.
 
 The ST programs are built with [atarist-toolkit-docker](https://github.com/sidecartridge/atarist-toolkit-docker), which provides `stcmd`.
 

@@ -85,7 +85,7 @@ DIST = dist
 ST_BUILD = STCMD_NO_TTY=1 stcmd make st
 
 define DIST_FILES
-rp/build/compad.uf2|flash a Pico W: hold BOOTSEL, plug in, copy it across|make firmware
+rp/build/compad-w.uf2|flash a Pico W: hold BOOTSEL, plug in, copy it across|make firmware
 rp/build-2w/compad-2w.uf2|flash a Pico 2 W, the same way|make firmware
 target/atarist/build/COMPAD.PRG|install: into the ST's AUTO folder|$(ST_BUILD)
 target/atarist/build/XPADVIEW.TOS|run it to watch the pad|$(ST_BUILD)
@@ -122,7 +122,7 @@ firmware:
 	@cmake -B rp/build-2w -S rp -DPICO_BOARD=pico2_w
 	@cmake --build rp/build-2w -j
 	@echo
-	@echo "flash rp/build/compad.uf2 on a Pico W, or"
+	@echo "flash rp/build/compad-w.uf2 on a Pico W, or"
 	@echo "rp/build-2w/compad-2w.uf2 on a Pico 2 W:"
 	@echo "hold BOOTSEL, plug in, copy it across"
 
