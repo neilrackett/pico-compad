@@ -426,46 +426,117 @@ static void button_checks(void)
  * duration, so "until replaced" is a burst armed slightly more often
  * than it lasts. The hazard is at both ends: stop re-arming and the
  * motor gaps, fail to stop and a pad buzzes after its host has gone.
+ *
+ * The second end is the timeout. The ST resends a held level every
+ * keepalive, so a pad that has not been asked for a whole timeout has
+ * a host that stopped asking or was reset mid rumble, and it was the
+ * case nothing covered: a reset left the pad buzzing until it
+ * disconnected. The intervals here are the real ones in ticks, so the
+ * margin between them is the one the firmware runs with.
  */
+#define TEST_REARM (200 / 20)
+#define TEST_KEEPALIVE (COMPAD_RUMBLE_KEEPALIVE_MS / 20)
+#define TEST_TIMEOUT (COMPAD_RUMBLE_TIMEOUT_MS / 20)
+
 static void rearm_checks(void)
 {
-    const uint16_t rearm = 10;
-    uint16_t age = 0;
+    const uint16_t rearm = TEST_REARM;
+    const uint16_t timeout = TEST_TIMEOUT;
+    uint16_t age = 0, quiet = 0;
     int fired = 0;
+    int gap = 0, worst = 0;
     int t;
 
+    check(TEST_KEEPALIVE * 2 < TEST_TIMEOUT,
+          "the timeout allows a keepalive to go missing");
+
     for (t = 0; t < 100; t++)
-        fired += ce_rumble_due(1, 0, 0, rearm, &age);
+        fired += ce_rumble_due(1, 0, 0, rearm, &age, timeout, &quiet);
 
     check(fired == 0, "a pad asked for nothing never re-arms");
 
-    age = 0;
+    age = quiet = 0;
     fired = 0;
     for (t = 0; t < 100; t++)
-        fired += ce_rumble_due(0, 200, 200, rearm, &age);
+        fired += ce_rumble_due(0, 200, 200, rearm, &age, timeout, &quiet);
 
     check(fired == 0, "nor does a pad that has left, however loud");
 
-    /* Held magnitudes re-arm forever, which is what "until replaced"
-     * means, and at the interval rather than continuously. */
-    age = 0;
+    /*
+     * Held magnitudes re-arm for as long as the ST keeps asking, which
+     * is what "until replaced" means, and at the interval rather than
+     * continuously. A request resets quiet, as handle_request() does,
+     * and the ST sends one every keepalive.
+     */
+    age = quiet = 0;
     fired = 0;
-    for (t = 0; t < 100; t++)
-        if (ce_rumble_due(1, 200, 0, rearm, &age))
+    for (t = 1; t <= 100; t++)
+    {
+        if (ce_rumble_due(1, 200, 0, rearm, &age, timeout, &quiet))
         {
             fired++;
             age = 0; /* what arm_rumble() does */
         }
 
+        if (t % TEST_KEEPALIVE == 0)
+            quiet = 0; /* what handle_request() does */
+    }
+
     check(fired == 10, "a held rumble re-arms once per interval");
+
+    /* And stops once the ST has gone quiet, so the burst already armed
+     * is the last one: the pad is silent within one burst of the
+     * timeout, never for the rest of the session. */
+    age = quiet = 0;
+    fired = 0;
+    for (t = 0; t < 1000; t++)
+    {
+        if (ce_rumble_due(1, 200, 0, rearm, &age, timeout, &quiet))
+        {
+            fired++;
+            age = 0;
+        }
+    }
+
+    check(fired == (TEST_TIMEOUT - 1) / TEST_REARM,
+          "a rumble nobody repeats stops at the timeout");
+    check(quiet == timeout, "and the silence is counted up to it, no further");
+
+    /*
+     * A keepalive arriving just inside the timeout keeps it going, and
+     * without a gap: the hazard at the other end is a motor that
+     * stutters because the resend was cut too fine. Measured as the
+     * longest run of ticks with nothing armed, which must never exceed
+     * the interval.
+     */
+    age = quiet = 0;
+    fired = 0;
+    for (t = 0; t < 1000; t++)
+    {
+        if (ce_rumble_due(1, 200, 0, rearm, &age, timeout, &quiet))
+        {
+            fired++;
+            age = 0;
+            gap = 0;
+        }
+        else if (++gap > worst)
+            worst = gap;
+
+        if (quiet == timeout - 1)
+            quiet = 0;
+    }
+
+    check(fired == 1000 / TEST_REARM,
+          "a keepalive just inside the timeout keeps it re-arming");
+    check(worst < rearm, "and the motor never gaps while it does");
 
     /* One motor is enough to keep it going: a left-only pulse must not
      * be mistaken for silence. */
-    age = 0;
-    check(!ce_rumble_due(1, 0, 200, rearm, &age),
+    age = quiet = 0;
+    check(!ce_rumble_due(1, 0, 200, rearm, &age, timeout, &quiet),
           "a right-only rumble is not due on its first tick");
     age = rearm - 1;
-    check(ce_rumble_due(1, 0, 200, rearm, &age),
+    check(ce_rumble_due(1, 0, 200, rearm, &age, timeout, &quiet),
           "but it is when the interval comes round");
 }
 

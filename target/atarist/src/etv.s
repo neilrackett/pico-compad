@@ -3,8 +3,9 @@
 
 | etv_timer trampoline.
 |
-| TOS calls the etv_timer vector ($400) from its Timer C handler at
-| about 200 Hz, in supervisor, as a plain subroutine. This saves the
+| TOS calls the etv_timer vector ($400) from its Timer C handler on
+| every fourth interrupt, 50 Hz, in supervisor, as a plain subroutine
+| with the elapsed milliseconds on the stack. This saves the
 | whole register set around the C tick, then tail-chains into whatever
 | the vector held before: chaining is not optional, and the full save is
 | cheap insurance inside somebody else's interrupt.

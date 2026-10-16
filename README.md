@@ -96,7 +96,7 @@ Your game ◄──── XPAD block, in the cookie jar ◄──── COMPAD.P
 
 The Pico runs [Bluepad32](https://github.com/ricardoquesada/bluepad32), which takes care of Bluetooth and the differences between controllers, and sends the full state of each pad down the serial line as short fixed-length frames. Every frame carries the whole state rather than just what changed, so a frame damaged in transit is simply dropped and the next one puts everything right, with no handshaking to go wrong.
 
-On the ST, `COMPAD.PRG` stays resident and runs from the system timer, decoding frames from the serial port and publishing them as an Xpad block in the cookie jar, which is where games find it. Rumble travels the other way: a game asks Xpad for it, and COMpad sends a short frame back to the adapter, which drives the pad's motors.
+On the ST, `COMPAD.PRG` stays resident and runs from the system timer, decoding frames from the serial port and publishing them as an Xpad block in the cookie jar, which is where games find it. Rumble travels the other way: a game asks Xpad for it, and COMpad sends a short frame back to the adapter, which drives the pad's motors. If the ST stops asking, because it was reset or switched off mid rumble, the adapter stops the motors by itself about two seconds later, which is a promise kept by both halves, so update the adapter firmware and `COMPAD.PRG` together.
 
 When it installs, `COMPAD.PRG` pings each serial port in turn, the modem port first, and keeps the one that answers. If nothing answers, because the adapter is unplugged or not switched on yet, it falls back to the modem port, so switching the adapter on later still works.
 

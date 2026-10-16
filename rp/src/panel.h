@@ -75,17 +75,36 @@ static COMPAD_UNUSED int ce_forget_due(int pressed, uint16_t hold,
  *
  * xpad's request area carries magnitudes and no duration, so "until
  * replaced" is expressed by arming a burst slightly longer than the
- * interval this fires at: the motor never gaps, and a host that stops
- * asking, or is switched off mid rumble, leaves the pad falling silent
- * on its own rather than buzzing for ever.
+ * interval this fires at, and the motor never gaps.
+ *
+ * It stops when the host does. A host holding a level resends it at
+ * least every COMPAD_RUMBLE_KEEPALIVE_MS, so quiet counts the ticks
+ * since this pad was last asked, and a pad quiet for timeout ticks has
+ * a host that stopped asking, or was switched off mid rumble: nothing
+ * is re-armed and the burst already running expires by itself. The
+ * stored level alone cannot tell those apart from a game still asking,
+ * which is how a reset mid rumble left a pad buzzing until it
+ * disconnected.
+ *
+ * quiet advances here, every tick and whether or not anything is due,
+ * and only a request resets it, which is the caller's to report. It
+ * stops at the timeout rather than running on, so a long silence
+ * cannot wrap it back round to "just asked".
  *
  * Here rather than beside the Bluepad32 call because the decision has
  * no SDK in it. Arming does.
  */
 static COMPAD_UNUSED int ce_rumble_due(int present, uint8_t lo, uint8_t hi,
-                                       uint16_t rearm, uint16_t *age)
+                                       uint16_t rearm, uint16_t *age,
+                                       uint16_t timeout, uint16_t *quiet)
 {
     if (!present || (!lo && !hi))
+        return 0;
+
+    if (*quiet < timeout)
+        (*quiet)++;
+
+    if (*quiet >= timeout)
         return 0;
 
     return ++(*age) >= rearm;

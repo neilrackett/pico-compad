@@ -7,8 +7,9 @@
  * Reads COMpad frames from the serial port and publishes them as an
  * xpad block, so anything xpad-aware sees whatever sits at the far end
  * of the wire. Stays resident; the serial ring is drained from the
- * etv_timer vector (~200 Hz), which xpad's AGENTS prefers over VBL as
- * far less likely to be clobbered by a game.
+ * etv_timer vector (50 Hz, every fourth Timer C interrupt), which
+ * xpad's AGENTS prefers over VBL as far less likely to be clobbered by
+ * a game.
  *
  * TOS keeps doing the serial receive: its RX interrupt fills the AUX
  * iorec ring and this driver drains the ring, reader-side only, which
@@ -76,6 +77,18 @@
 #define ETV_TIMER_VEC 0x100 /* vector number: address $400 */
 
 /*
+ * The 200 Hz system counter, which is what the rumble keepalive is
+ * timed by rather than ticks of the vector above. TOS calls etv_timer
+ * on every fourth Timer C interrupt, 50 Hz, with the milliseconds
+ * elapsed on the stack, and the trampoline does not pass those
+ * through; the counter is simpler and is what xpad's own viewer times
+ * by. Legal to read here without Supexec because the tick runs inside
+ * TOS's interrupt, in supervisor mode. Five milliseconds a count.
+ */
+#define HZ_200 (*(volatile uint32_t *)0x4BAL)
+#define RUMBLE_KEEPALIVE_COUNTS (COMPAD_RUMBLE_KEEPALIVE_MS / 5)
+
+/*
  * The AUX input ring, as Iorec() hands it out. _IOREC comes from
  * <mint/ostruct.h>, which <mint/osbind.h> already includes, and it
  * marks ibufhd and ibuftl volatile: those are the two fields TOS's RX
@@ -126,6 +139,29 @@ static uint8_t sent_rumble[XPAD_MAX_PADS][2];
 static uint8_t seq_seen;
 
 /*
+ * The keepalive: when held levels were last resent, in _hz_200 counts,
+ * and which pads are still owed that resend. The adapter stops
+ * re-arming a pad it has not heard from, so a held level has to be
+ * said again or a reset mid rumble is indistinguishable from a game
+ * still asking. One bit per pad, set when the interval comes round and
+ * cleared as each frame is queued, so one that did not fit the ring is
+ * retried next tick the same way the sequence path retries: four pads
+ * at once is 32 bytes against a ring that holds 31.
+ *
+ * next_req is where the walk starts, and it is the pad a frame was
+ * last refused for. The ring drains one byte a tick, so when four pads
+ * want frames it is full for most of a second and a walk that always
+ * began at pad 0 would hand every freed slot to the lowest pad that
+ * wanted it again: pads 2 and 3 were never resent at all and timed
+ * out on the adapter while the game still held them. Starting from
+ * the refused pad serves them in turn, as ce_schedule() does on the
+ * adapter.
+ */
+static uint32_t keepalive_at;
+static uint8_t keepalive_owed;
+static uint8_t next_req;
+
+/*
  * Whole frames or nothing.
  *
  * Dropping a frame costs one request, which the consumer will make
@@ -152,10 +188,11 @@ static int tx_push(const uint8_t *b, uint8_t n)
 }
 
 /*
- * One byte per tick, when the transmitter is free. At ~200 Hz that is
- * 200 bytes a second, which an eight byte request frame clears in
- * 40 ms: far inside what a rumble needs, and it cannot stall the
- * interrupt the way waiting for the register would.
+ * One byte per tick, when the transmitter is free. At 50 Hz that is
+ * 50 bytes a second, so an eight byte request frame takes 160 ms:
+ * slow, but a rumble is felt in bursts of a quarter second or more,
+ * and it cannot stall the interrupt the way waiting for the register
+ * would. The keepalive below is sized to this rate.
  */
 static void tx_tick(void)
 {
@@ -169,39 +206,86 @@ static void tx_tick(void)
 /*
  * Has a consumer asked for something? xpad says to bump seq after
  * writing the request area, so this is a byte compare on the common
- * path and only walks the pads when something actually changed.
+ * path and only walks the pads when something actually changed, or
+ * when a held level is due to be said again.
+ *
+ * The resend is the ST's half of the rumble timeout in
+ * docs/protocol.md: the adapter stops re-arming a pad it has not heard
+ * from for COMPAD_RUMBLE_TIMEOUT_MS, so a machine reset mid rumble
+ * leaves the pad falling silent instead of buzzing until it
+ * disconnects.
+ *
+ * The cost is eight bytes per held pad every COMPAD_RUMBLE_KEEPALIVE_MS,
+ * against a path that carries 50 bytes a second: one held pad is 16 of
+ * them, two are 32, and four do not fit at all, so the link paces them
+ * instead. Then the ring is always full, a frame leaves every 160 ms,
+ * and the rotation hands them out in turn, so each pad is resent about
+ * every 640 ms with nothing else flowing, and inside 1120 ms when every
+ * other pad also changes level once per interval. The timeout is 2000,
+ * which leaves the better part of a second over the worst of those.
  */
 static void requests_tick(void)
 {
-    int i, dropped = 0;
+    uint32_t now;
+    int i, n, dropped = 0;
 
-    if (!can_transmit || req.seq == seq_seen)
+    if (!can_transmit)
         return;
 
-    for (i = 0; i < XPAD_MAX_PADS; i++)
+    now = HZ_200;
+
+    if (now - keepalive_at >= RUMBLE_KEEPALIVE_COUNTS)
     {
-        uint8_t lo = req.rumble[i][0];
-        uint8_t hi = req.rumble[i][1];
+        keepalive_at = now;
+
+        for (i = 0; i < XPAD_MAX_PADS; i++)
+        {
+            if (sent_rumble[i][0] || sent_rumble[i][1])
+                keepalive_owed |= (uint8_t)(1 << i);
+        }
+    }
+
+    if (req.seq == seq_seen && !keepalive_owed)
+        return;
+
+    for (n = 0; n < XPAD_MAX_PADS; n++)
+    {
+        uint8_t lo, hi, bit;
         uint8_t f[COMPAD_REQUEST_LEN];
 
-        if (lo == sent_rumble[i][0] && hi == sent_rumble[i][1])
+        i = (next_req + n) % XPAD_MAX_PADS;
+        lo = req.rumble[i][0];
+        hi = req.rumble[i][1];
+        bit = (uint8_t)(1 << i);
+
+        if (lo == sent_rumble[i][0] && hi == sent_rumble[i][1] &&
+            !(keepalive_owed & bit))
             continue;
 
         /* Duration 0: hold it until asked for something else, which is
          * what a request area with no duration field means. */
         compad_request_frame((uint8_t)i, lo, hi, 0, req.led[i], f);
 
-        /* Recorded only once it is queued. Marking it sent first would
+        /*
+         * Recorded only once it is queued. Marking it sent first would
          * make a dropped frame look delivered, and this filter would
-         * then suppress the retry that dropping it relies on. */
+         * then suppress the retry that dropping it relies on.
+         *
+         * A refusal ends the walk, and this pad goes first next tick.
+         * Every frame is the same size, so nothing later could have
+         * fitted either, and letting a later pad past would be the
+         * starvation the rotation exists to prevent.
+         */
         if (!tx_push(f, COMPAD_REQUEST_LEN))
         {
+            next_req = (uint8_t)i;
             dropped = 1;
-            continue;
+            break;
         }
 
         sent_rumble[i][0] = lo;
         sent_rumble[i][1] = hi;
+        keepalive_owed &= (uint8_t)~bit;
     }
 
     /*
@@ -330,7 +414,7 @@ static void publish_shadow(void)
 }
 
 /*
- * Called from the trampoline at ~200 Hz, in interrupt context. Drains
+ * Called from the trampoline at 50 Hz, in interrupt context. Drains
  * the AUX ring the way Bconin would: TOS's RX interrupt appends at the
  * tail (`ibuftl`) and this consumes from the head (`ibufhd`), so a
  * single-producer single-consumer ring needs no masking. Reading those

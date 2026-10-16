@@ -54,12 +54,15 @@ typedef struct
      */
     uint8_t owed;
 
-    /* What the ST last asked this pad's motors to do, and how long
-     * since they were armed. Here rather than in an array beside this
+    /* What the ST last asked this pad's motors to do, how long since
+     * they were armed, and how long since the ST last asked at all,
+     * which is what lets a held level outlive the host that set it
+     * only by the timeout. Here rather than in an array beside this
      * struct so that clearing a departing slot cannot forget half of
      * it. */
     uint8_t rumble_lo, rumble_hi;
     uint16_t rumble_age;
+    uint16_t rumble_quiet;
 } COMPAD_SLOT;
 
 static COMPAD_SLOT slots[COMPAD_PADS];
@@ -441,6 +444,19 @@ static void answer_ping(void)
         {
             send_descriptor((uint8_t)i);
             replied = 1;
+
+            /*
+             * A ping is a host starting up: only COMPAD.PRG's port
+             * claim sends one, and a second copy steps aside before it
+             * gets that far. So whatever a previous host left running
+             * is stale, and the new one cannot stop it, because it
+             * starts with nothing sent and sends only changes. Zero
+             * and arm, which stops the motors now rather than at the
+             * timeout.
+             */
+            slots[i].rumble_lo = 0;
+            slots[i].rumble_hi = 0;
+            arm_rumble(i);
         }
     }
 
@@ -468,6 +484,10 @@ static void handle_request(const uint8_t *f)
         slots[pad].rumble_lo = COMPAD_REQ_RUMBLE_LO(f);
         slots[pad].rumble_hi = COMPAD_REQ_RUMBLE_HI(f);
 
+        /* Heard from, so the timeout starts again. The ST resends a
+         * held level inside it, and this is the resend arriving. */
+        slots[pad].rumble_quiet = 0;
+
         /* Arm at once, whether that starts it or stops it: a consumer
          * writing zeroes means stop, and waiting for the burst to
          * expire would leave the pad buzzing after the trigger. */
@@ -479,18 +499,36 @@ static void handle_request(const uint8_t *f)
     }
 }
 
-/* Keep a held rumble held. xpad's request area has no duration, so
- * "until replaced" is expressed by re-arming just inside the burst. */
+/*
+ * Keep a held rumble held, and let go of one the ST has stopped asking
+ * for. xpad's request area has no duration, so "until replaced" is
+ * expressed by re-arming just inside the burst; a pad quiet for the
+ * timeout has its levels zeroed so the slot says what the motors are
+ * doing, and the burst already armed runs out by itself.
+ */
 static void rumble_tick(void)
 {
     int i;
 
     for (i = 0; i < COMPAD_PADS; i++)
     {
-        if (ce_rumble_due(slots[i].present, slots[i].rumble_lo,
-                          slots[i].rumble_hi, COMPAD_RUMBLE_REARM,
-                          &slots[i].rumble_age))
+        COMPAD_SLOT *s = &slots[i];
+
+        if (ce_rumble_due(s->present, s->rumble_lo, s->rumble_hi,
+                          COMPAD_RUMBLE_REARM, &s->rumble_age,
+                          COMPAD_RUMBLE_TIMEOUT, &s->rumble_quiet))
+        {
             arm_rumble(i);
+        }
+        else if (s->rumble_quiet >= COMPAD_RUMBLE_TIMEOUT &&
+                 (s->rumble_lo || s->rumble_hi))
+        {
+            /* Once per silence, since the levels are zero after it:
+             * evidence of a host that went away, not a statistic. */
+            logi("compad: rumble on pad %d timed out\n", i);
+            s->rumble_lo = 0;
+            s->rumble_hi = 0;
+        }
     }
 }
 

@@ -95,13 +95,21 @@
  * Rumble. xpad's request area carries magnitudes and no duration, so a
  * consumer that sets them means "until I set something else", while
  * Bluepad32's play_dual_rumble wants a duration. So the firmware arms
- * a slightly longer burst than the interval it re-arms at: the motor
- * never gaps, and if the ST stops asking, or is switched off mid
- * rumble, the pad falls silent on its own within one burst rather than
- * buzzing for ever.
+ * a slightly longer burst than the interval it re-arms at, and the
+ * motor never gaps.
+ *
+ * The re-arm stops when the ST does. A host holding a level resends it
+ * at least every COMPAD_RUMBLE_KEEPALIVE_MS, per docs/protocol.md, so
+ * a pad not asked for in COMPAD_RUMBLE_TIMEOUT_MS has a host that
+ * stopped asking, or was switched off mid rumble, and it falls silent
+ * within one burst of that rather than buzzing for ever. The stored
+ * level alone could not tell the two apart: with no timeout a reset
+ * mid rumble left the pad buzzing until it disconnected. Both
+ * intervals come from protocol.h, the header both ends compile.
  */
 #define COMPAD_RUMBLE_MS 250
 #define COMPAD_RUMBLE_REARM (200 / COMPAD_TICK_MS)
+#define COMPAD_RUMBLE_TIMEOUT (COMPAD_RUMBLE_TIMEOUT_MS / COMPAD_TICK_MS)
 
 /* Blink periods in ticks. They only have to be obviously different
  * from each other, per docs/roadmap.md: plain on and off, no fade. */

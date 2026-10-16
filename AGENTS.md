@@ -226,6 +226,14 @@ MFP through a level shifter.
   pressed. Blocking the run loop past its own tick costs Bluetooth and
   the receive drain, not just latency, because the RX FIFO holds less
   than one tick of 19200.
+- **A held rumble is resent, and an unheard pad times out.** The
+  provider resends a non-zero level every `COMPAD_RUMBLE_KEEPALIVE_MS`
+  and the adapter stops re-arming a pad it has not heard from for
+  `COMPAD_RUMBLE_TIMEOUT_MS`, both in `protocol.h`; a ping stops every
+  motor. Without the timeout a reset mid rumble left the pad buzzing
+  until it disconnected, and nothing on a bench reproduces that short
+  of pulling the plug. `ce_rumble_due()` in `panel.h` is the decision
+  and `test/encode_test.c` pins both ends of it.
 - xpad's rules travel with it: single provider, chain any displaced
   handler, `Supexec` below `$800`, frozen button bits, and never claim
   a capability that is not honoured. See `xpad/AGENTS.md`.

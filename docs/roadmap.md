@@ -270,8 +270,9 @@ out entirely when it cannot transmit.
 The provider sends from the `etv_timer` handler, so it writes the MFP's
 data register directly rather than calling `Bconout`: the BIOS is not
 reentrant and this file's design is that nothing calls it from an
-interrupt. One byte per tick when the transmitter is free, which clears
-an eight byte frame in 40 ms. That path is MFP only, which is why a
+interrupt. One byte per tick when the transmitter is free, and the
+tick is 50 Hz, so an eight byte frame takes 160 ms. That path is MFP
+only, which is why a
 provider on one of a Mega STE's SCC ports stops claiming rumble.
 
 **Finding the port.** `COMPAD.PRG` pings each serial port at install,

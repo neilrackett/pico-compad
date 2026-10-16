@@ -34,6 +34,26 @@
  */
 #define COMPAD_BAUD 19200
 
+/*
+ * Rumble timing, here for the same reason: both ends depend on it.
+ * xpad's request area carries magnitudes and no duration, so a
+ * non-zero level means "until replaced", and an adapter cannot tell a
+ * host holding a level from one that was reset mid rumble unless the
+ * host keeps saying so. A host holding a non-zero level resends that
+ * pad's request at least every KEEPALIVE_MS; an adapter stops
+ * re-arming a pad it has not heard from for TIMEOUT_MS. The ST derives
+ * its resend interval from the first and the firmware its timeout from
+ * the second, so neither can drift from docs/protocol.md alone.
+ *
+ * The numbers are set by the ST's transmit path, which sends one byte
+ * per 50 Hz tick: four held pads cannot resend inside 640 ms however
+ * often they are asked to, so the timeout is what leaves that a clear
+ * margin, and the keepalive is what keeps one or two held pads from
+ * filling the path. docs/protocol.md has the arithmetic.
+ */
+#define COMPAD_RUMBLE_KEEPALIVE_MS 500
+#define COMPAD_RUMBLE_TIMEOUT_MS 2000
+
 /* Adapter to host, under COMPAD_SYNC. */
 #define COMPAD_TYPE_STATE 0x0
 #define COMPAD_TYPE_COMPACT 0x1

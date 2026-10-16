@@ -167,6 +167,16 @@ line rate, and something else may be using it. Probe the recommended
 port first and stop on the first answer, and put the line settings back
 on any port that does not reply.
 
+**A ping also stops every motor.** A ping means a host is starting up,
+and a host that is starting up has nothing to do with whatever the
+last one left running: a freshly loaded provider begins with nothing
+sent, so it would never send the stop itself, and the request timeout
+below is the slow way to the same end. Only `COMPAD.PRG`'s port claim
+pings, and a second copy steps aside before it gets that far, so a ping
+cannot cut short a rumble that a running host still wants. An adapter
+zeroes every present pad's levels on a ping and arms them, which stops
+the motors at once rather than within a burst.
+
 ## Request frame (type `0xE`, host to adapter)
 
 ```
@@ -183,12 +193,13 @@ on any port that does not reply.
 Xbox trigger impulse motors have no home in xpad v1, so only the two
 main motors are driven.
 
-**What the reference adapter honours today**: the two rumble bytes, and
-nothing else. `duration` is treated as 0 whatever it holds, because
-xpad's request area carries magnitudes and no duration, so a consumer
-has no way to ask for anything else. `led` is read off the wire and
-discarded: Bluepad32's Xbox parser implements neither `set_player_leds`
-nor `set_lightbar_color`, so there is nothing on that pad to light, and
+**What the reference adapter honours today**: the two rumble bytes, the
+keepalive and the timeout below, and nothing else. `duration` is
+treated as 0 whatever it holds, because xpad's request area carries
+magnitudes and no duration, so a consumer has no way to ask for
+anything else. `led` is read off the wire and discarded: Bluepad32's
+Xbox parser implements neither `set_player_leds` nor
+`set_lightbar_color`, so there is nothing on that pad to light, and
 `XPAD_CAP_LED` is correspondingly never claimed. Both fields stay in
 the frame so that honouring them later needs no wire change. A sender
 should keep filling them in; a receiver may ignore what it cannot do,
@@ -198,9 +209,38 @@ but must not claim the capability.
 area implies: it carries magnitudes and no duration, so a consumer that
 sets them expects them to hold until it sets something else. An adapter
 whose own rumble call wants a duration should arm a burst slightly
-longer than the interval it re-arms at, so the motor never gaps and a
-host that stops asking, or is switched off mid rumble, leaves the pad
-falling silent on its own rather than buzzing indefinitely.
+longer than the interval it re-arms at, so the motor never gaps.
+
+**A held level is resent, and an unheard pad times out.** "Until
+replaced" cannot mean for ever: a host that is reset or switched off
+mid rumble replaces nothing, and the adapter has no other way to know
+it has gone. So a host holding a non-zero level for a pad resends that
+pad's request at least every `COMPAD_RUMBLE_KEEPALIVE_MS`, 500 ms, and
+an adapter stops re-arming a pad once no request for it has arrived
+for `COMPAD_RUMBLE_TIMEOUT_MS`, 2000 ms, so the pad falls silent within
+one burst after that. Both constants are in `protocol.h`, the one
+header both ends compile. The timeout is four keepalives, so a resend
+lost to noise costs nothing, and the resend is full state like every
+other request frame: a level of zero is never resent, because there is
+nothing to time out.
+
+The numbers come from the ST's transmit path, which sends one byte per
+50 Hz tick, 50 bytes a second, so a request frame takes 160 ms. Eight
+bytes per held pad every 500 ms is 16 of those 50 for one pad and 32
+for two; four held pads want 64, which does not fit, so the link paces
+them instead: the ring stays full, a frame leaves every 160 ms, and
+the provider hands them out in turn. Each pad is then resent about
+every 640 ms with nothing else flowing, and within 1120 ms when every
+other pad also changes level once per interval, which is the honest
+worst case, against a timeout of 2000. A tighter keepalive would not
+help, because the link cannot carry it; a shorter timeout would have
+no margin.
+
+The two halves are independent, so they can be updated apart. A new
+adapter with an old `COMPAD.PRG` stops a rumble held longer than two
+seconds whether the host still wants it or not, which is the safe way
+to fail; an old adapter with a new `COMPAD.PRG` re-arms the same
+levels it was already holding, and the resend changes nothing.
 
 ## Timing budget
 
