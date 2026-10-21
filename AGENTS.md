@@ -30,7 +30,7 @@ why it stays clean even though only the ST uses it.
 
 xpad is a **submodule** (`lib/xpad`), not a vendored copy, so the two
 projects stay in sync while both evolve. Do not edit files under
-`lib/`; change them upstream and bump. The pin is xpad **v1.1.2**:
+`lib/`; change them upstream and bump. The pin is xpad **v1.1.12**:
 prefer bumping to a tag rather than to whatever `main` happens to hold,
 so a checkout of COMpad names the ABI version it was built against.
 
@@ -236,7 +236,9 @@ MFP through a level shifter.
   and `test/encode_test.c` pins both ends of it.
 - xpad's rules travel with it: single provider, chain any displaced
   handler, `Supexec` below `$800`, frozen button bits, and never claim
-  a capability that is not honoured. See `xpad/AGENTS.md`.
+  a capability that is not honoured. Before touching anything that
+  reads or publishes Xpad, read `lib/xpad/.claude/skills/xpad/SKILL.md`,
+  which has the rest and links into xpad's docs.
 - Serial timing observed under Hatari is meaningless; only framing,
   sync recovery and checksums are testable there. Do not tune timing
   against the emulator.
