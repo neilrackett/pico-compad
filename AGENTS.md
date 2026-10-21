@@ -240,6 +240,14 @@ MFP through a level shifter.
 - Serial timing observed under Hatari is meaningless; only framing,
   sync recovery and checksums are testable there. Do not tune timing
   against the emulator.
+- **COMPAD.PRG links libcmini and never calls `printf`.** It stays
+  resident and keeps every byte it links. On mintlib with `printf` it
+  cost 205,590 bytes of free RAM under EmuTOS and took 262,922 off the
+  largest free block; now it costs 9,566. `printf` alone was 7K, mostly
+  floating point nothing prints, so a message that needs formatting
+  gets a few lines of its own instead. CPDTEST.TOS links the same
+  library, so the self test runs what ships. The bring-up tools exit,
+  so they stay on mintlib.
 - **Test the harness, not just the ST.** The server's `--test` mode
   exists so the end-to-end runs need no browser, but it also means
   those runs never open a socket. A wrong magic GUID in the WebSocket

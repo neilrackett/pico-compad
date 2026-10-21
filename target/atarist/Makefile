@@ -25,6 +25,17 @@ XPADSRC  = $(XPAD)/xpad.c $(XPAD)/xpad_provider.c
 COMPADSRC = src/compad.c src/etv.s $(XPADSRC)
 COMPADDEP = $(COMPADSRC) src/protocol.h $(XPAD)/xpad.h src/stport.h $(VERSION_FILE)
 
+# COMpad stays resident, so the C library it links is RAM the machine
+# never gets back. With mintlib and printf it cost 205,590 bytes of free
+# RAM under EmuTOS, and the largest free block shrank by 262,922 because
+# it left a hole besides. With libcmini, and Cconws in place of printf,
+# it costs 9,566: what Ptermres keeps and nothing else. crt0.o goes
+# first because TOS starts a program at the first byte of its text. The
+# tools below are not resident, so they stay on mintlib.
+CMINI     = /freemint/libcmini
+CMINIPRE  = -nostdlib -I$(CMINI)/include $(CMINI)/lib/crt0.o
+CMINIPOST = -L$(CMINI)/lib -lcmini -lgcc
+
 all: $(BUILD)/PIPECHK.TOS $(BUILD)/SENDTEST.TOS \
      $(BUILD)/COMPAD.PRG $(BUILD)/CPDTEST.TOS \
      $(BUILD)/VIEWTEST.TOS $(BUILD)/XPADVIEW.TOS $(BUILD)/LIVECHK.TOS \
@@ -48,13 +59,14 @@ $(BUILD)/KEYECHO.TOS: src/keyecho.c $(XPAD)/xpad.c $(XPAD)/xpad.h | $(BUILD)
 	$(CC) $(CFLAGS) -I$(XPAD) src/keyecho.c $(XPAD)/xpad.c -o $@
 
 $(BUILD)/COMPAD.PRG: $(COMPADDEP) | $(BUILD)
-	$(CC) $(CFLAGS) -I$(XPAD) $(COMPADSRC) -o $@
+	$(CC) $(CFLAGS) -I$(XPAD) $(CMINIPRE) $(COMPADSRC) $(CMINIPOST) -o $@
 
 # The same source built to run its self test and exit: Hatari's --auto
 # takes a path and no arguments. It supplies argv and runs the ordinary
-# main, per xpad's AGENTS rule.
+# main, per xpad's AGENTS rule. Linked with libcmini as well, so the
+# self test runs against the library that ships.
 $(BUILD)/CPDTEST.TOS: $(COMPADDEP) | $(BUILD)
-	$(CC) $(CFLAGS) -I$(XPAD) -DXPAD_SELFTEST $(COMPADSRC) -o $@
+	$(CC) $(CFLAGS) -I$(XPAD) -DXPAD_SELFTEST $(CMINIPRE) $(COMPADSRC) $(CMINIPOST) -o $@
 
 # xpad's own viewer, harness build, straight from the submodule: it is
 # the reference consumer, so it is what verifies the provider.

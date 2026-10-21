@@ -36,7 +36,6 @@
 
 #include <mint/basepage.h>
 #include <mint/osbind.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "protocol.h"
@@ -475,6 +474,16 @@ static void init_block(void)
         publish_shadow();
 }
 
+/*
+ * Console output goes through Cconws, never printf. This program stays
+ * resident and keeps every byte of library it links, and printf was 7K
+ * of it, mostly floating point that nothing here prints.
+ */
+static void say(const char *s)
+{
+    (void)Cconws(s);
+}
+
 /* ------------------------------------------------------------------ */
 /* Self test                                                           */
 /* ------------------------------------------------------------------ */
@@ -483,7 +492,12 @@ static int failures;
 
 static void check(int ok, const char *what)
 {
-    printf("%-46s %s\n", what, ok ? "ok" : "FAIL");
+    size_t n;
+
+    say(what);
+    for (n = strlen(what); n < 46; n++)
+        Cconout(' ');
+    say(ok ? " ok\r\n" : " FAIL\r\n");
     if (!ok)
         failures++;
 }
@@ -625,9 +639,8 @@ static int selftest(void)
     check(xpad_read(&block, 2, &out) && out.buttons == 0,
           "full state replaces rather than accumulates");
 
-    printf("\n%s\n", failures ? "FAILED" : "all checks passed");
-    printf("COMPAD-DONE %d\r\n", failures ? 1 : 0);
-    fflush(stdout);
+    say(failures ? "\r\nFAILED\r\n" : "\r\nall checks passed\r\n");
+    say(failures ? "COMPAD-DONE 1\r\n" : "COMPAD-DONE 0\r\n");
 
     return failures ? 1 : 0;
 }
@@ -778,12 +791,12 @@ static int install(void)
 {
     int port, answered;
 
-    printf(BANNER);
+    say(BANNER);
 
     if (xpad_find())
     {
-        printf("An Xpad provider is already installed,\r\n");
-        printf("so this one has left it alone.\r\n");
+        say("An Xpad provider is already installed,\r\n");
+        say("so this one has left it alone.\r\n");
         return 0;
     }
 
@@ -795,8 +808,8 @@ static int install(void)
 
     if (!aux)
     {
-        printf("No AUX input record, so the serial\r\n");
-        printf("port cannot be read.\r\n");
+        say("No AUX input record, so the serial\r\n");
+        say("port cannot be read.\r\n");
         return 0;
     }
 
@@ -807,8 +820,8 @@ static int install(void)
 
     if (!xpad_publish(&block))
     {
-        printf("Could not add the XPAD cookie.\r\n");
-        printf("The cookie jar may be full.\r\n");
+        say("Could not add the XPAD cookie.\r\n");
+        say("The cookie jar may be full.\r\n");
         return 0;
     }
 
@@ -820,10 +833,12 @@ static int install(void)
     /* Say which port and how it was chosen. A ping that finds nothing
      * falls back silently otherwise, and "it is on Modem 1 because I
      * looked" is a different fact from "because I gave up". */
-    printf("Xpad provider listening on %s.\r\n", port_name(port));
+    say("Xpad provider listening on ");
+    say(port_name(port));
+    say(".\r\n");
 
     if (!answered)
-        printf("No adapter answered, so this is the default.\r\n");
+        say("No adapter answered, so this is the default.\r\n");
 
     return 1;
 }
